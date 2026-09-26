@@ -25,7 +25,7 @@
     main{padding:16px}.tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;background:#eaf0f8;padding:5px;border-radius:12px;margin-bottom:14px}.tab{background:transparent;color:#5d6777}.tab.active{background:#fff;color:var(--blue);box-shadow:0 1px 4px #0001}
     .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px;box-shadow:0 6px 24px #1231  }
     .label{font-size:12px;font-weight:700;color:#596274;margin-bottom:7px}.field{width:100%;border:1px solid #d7dce3;border-radius:10px;padding:12px 13px;font:inherit;outline:none}.field:focus{border-color:#5f95e7;box-shadow:0 0 0 3px #1976d214}
-    .camera{position:relative;overflow:hidden;border-radius:14px;background:#101418;aspect-ratio:4/3}.camera video{width:100%;height:100%;object-fit:cover}.guide,.scanline{display:none}.cam-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.status{margin-top:10px;border-radius:10px;padding:10px 12px;font-size:13px;background:#f3f4f6}.status.ok{background:#e9f8ef;color:#08783f}.status.warn{background:#fff6df;color:#8a5b00}.status.bad{background:#fdeceb;color:#a6251d}
+    .camera{position:relative;overflow:hidden;border-radius:14px;background:#101418;aspect-ratio:4/3}.camera video{width:100%;height:100%;object-fit:cover}.guide,.scanline{display:none}.camera-permission{display:flex;align-items:center;gap:12px;justify-content:space-between;margin-top:10px;padding:11px 12px;border:1px solid #d8e2ef;border-radius:11px;background:#f8fbff}.camera-permission b{display:block;font-size:12px}.camera-permission small{display:block;color:var(--muted);font-size:10px;line-height:1.45;margin-top:2px}.camera-permission.ok{background:#e9f8ef;border-color:#c9ead7}.camera-permission.bad{background:#fdeceb;border-color:#f2c7c3}.camera-permission .permission-action{flex:0 0 auto;min-height:38px;padding:8px 10px;font-size:11px}.cam-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.status{margin-top:10px;border-radius:10px;padding:10px 12px;font-size:13px;background:#f3f4f6}.status.ok{background:#e9f8ef;color:#08783f}.status.warn{background:#fff6df;color:#8a5b00}.status.bad{background:#fdeceb;color:#a6251d}
     .result{display:none}.result.show{display:block}.kv{display:grid;grid-template-columns:120px 1fr;gap:8px 12px;padding:7px 0;border-bottom:1px solid #edf0f3}.kv:last-child{border-bottom:0}.k{font-size:12px;color:var(--muted);font-weight:700}.v{font-size:13px;font-weight:600;word-break:break-word}
     .session{display:flex;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid #edf0f3}.session:last-child{border-bottom:0}.session b{font-size:13px}.session small{color:var(--muted)}
     .pill{display:inline-flex;padding:5px 8px;border-radius:999px;background:#e9f8ef;color:#08783f;font-size:11px;font-weight:800}.pill.commcare{background:#fff3e6;color:#a45300}.pill.unallocated{background:#fff0ef;color:#a6251d}.allocation-note{margin-top:10px;padding:10px 12px;border-radius:10px;background:#fff8ea;border:1px solid #f5dfaf;color:#79520a;font-size:12px;line-height:1.45}.hidden{display:none!important}.footer-note{font-size:11px;color:var(--muted);text-align:center;padding:12px}
@@ -62,7 +62,7 @@
     @media(max-width:420px){.scan-modal{padding:16px 12px}.scan-modal-card{width:min(94vw,500px);padding:18px;border-radius:16px;max-height:84dvh}.scan-modal-top{gap:12px}.modal-title{font-size:18px}.modal-sub{font-size:13px}.modal-location{padding:14px}.modal-location strong{font-size:19px}.modal-grid{grid-template-columns:104px 1fr;gap:9px 10px}.modal-grid .v{font-size:13.5px}.sort-success .modal-title{font-size:21px}.sort-success .modal-sub{font-size:13.5px}}
     @media(max-width:420px){.sort-live{grid-template-columns:1fr}.sort-counter{flex-direction:row;align-items:baseline;gap:8px;justify-content:flex-start}.sort-counter strong{font-size:24px}}
     button{min-height:44px}.field{min-height:44px}
-    @media(max-width:420px){.kv{grid-template-columns:105px 1fr}.cam-actions{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.import-actions{grid-template-columns:1fr}}
+    @media(max-width:420px){.kv{grid-template-columns:105px 1fr}.camera-permission{align-items:flex-start;flex-direction:column}.camera-permission .permission-action{width:100%}.cam-actions{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.import-actions{grid-template-columns:1fr}}
     @media(min-width:640px){main{padding:22px}.camera{aspect-ratio:16/10}.stats{grid-template-columns:repeat(4,1fr)}}
   </style>
 </head>
@@ -82,7 +82,7 @@
     <select id="sessionSelect" class="field"><option value="">Loading sessions…</option></select>
     <div id="sessionMeta" class="sub" style="margin-top:8px"></div>
     <div class="sort-live">
-      <div class="sort-counter"><strong id="sortCount">0</strong><span>SCANNED THIS SESSION</span></div>
+      <div class="sort-counter"><strong id="sortCount">0</strong><span>YOUR SCANS • THIS DEVICE</span></div>
       <div class="recent">
         <div class="recent-head">RECENT SCANS</div>
         <div id="recentScans"><div class="recent-row"><div><b>Ready to scan</b><small>Start the camera and move from device to device.</small></div><span class="scan-source">LIVE</span></div></div>
@@ -96,6 +96,7 @@
       <div class="guide"></div><div class="scanline"></div>
     </div>
     <canvas id="canvas" class="hidden"></canvas><canvas id="qrCanvas" class="hidden"></canvas>
+    <div id="cameraPermission" class="camera-permission"><div><b id="cameraPermissionTitle">Camera access required</b><small id="cameraPermissionText">Tap Allow Camera Access, then choose Allow in your browser prompt.</small></div><button id="allowCameraBtn" class="secondary permission-action" type="button">Allow Camera Access</button></div>
     <div class="cam-actions"><button id="cameraBtn" class="primary">Start Camera</button><button id="readBtn" class="secondary" disabled>Read S/N Now</button></div>
     <div id="scanStatus" class="status">Wide-open scanner ready: QR and S/N recognition use the full camera view.</div>
   </section>
@@ -156,8 +157,8 @@ const SUPABASE_URL='https://xtodkzecgxqqxfyvksmm.supabase.co';
 const SUPABASE_KEY='sb_publishable_1vVhp31vXV__B_Wv7DFClg_pGAEz6dQ';
 const db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=id=>document.getElementById(id);
-let mode='find',stream=null,ocrWorker=null,reading=false,adminPin='',qrDetector=null,qrTimer=null,ocrTimer=null,scanBusy=false,scanCooldownUntil=0,lastAcceptedSerial='',lastAcceptedAt=0,recentScans=[],sessionScanCount=0,ocrCorrectionSerial='',ocrCorrectionCount=0,audioCtx=null,modalOpen=false,modalTimer=null,scannerDeviceId='',scannerDeviceLabel='',scannerDeviceProfile={},adminSessionsCache=[];
-const operator=$('operator'); operator.value=localStorage.getItem('swap_operator')||''; operator.addEventListener('change',()=>localStorage.setItem('swap_operator',operator.value.trim()));
+let mode='find',stream=null,ocrWorker=null,reading=false,adminPin='',qrDetector=null,qrTimer=null,ocrTimer=null,scanBusy=false,scanCooldownUntil=0,lastAcceptedSerial='',lastAcceptedAt=0,recentScans=[],sessionScanCount=0,ocrCorrectionSerial='',ocrCorrectionCount=0,audioCtx=null,modalOpen=false,modalTimer=null,scannerDeviceId='',scannerDeviceLabel='',scannerDeviceProfile={},adminSessionsCache=[],cameraPermissionState='unknown';
+const operator=$('operator'); operator.value=localStorage.getItem('swap_operator')||''; operator.addEventListener('change',()=>{localStorage.setItem('swap_operator',operator.value.trim());if(mode==='sort')loadMySessionScans($('sessionSelect').value);});
 
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{closeScanModal();document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');mode=b.dataset.mode;$('sortSessionCard').classList.toggle('hidden',mode!=='sort');$('resultCard').classList.remove('show');if(mode==='sort'){loadSessions();renderRecentScans();}});
 
@@ -297,13 +298,79 @@ function stopScanLoops(){
   if(ocrTimer)clearTimeout(ocrTimer);
   qrTimer=ocrTimer=null;
 }
+function setCameraPermissionUI(state,message=''){
+  cameraPermissionState=state;
+  const box=$('cameraPermission'),title=$('cameraPermissionTitle'),txt=$('cameraPermissionText'),btn=$('allowCameraBtn');
+  if(!box||!title||!txt||!btn)return;
+  box.classList.remove('ok','bad');
+  btn.hidden=false;
+  if(state==='granted'){
+    box.classList.add('ok');
+    title.textContent='Camera access granted';
+    txt.textContent=message||'Camera permission is ready. Tap Start Camera when needed.';
+    btn.hidden=true;
+    if(!stream)$('cameraBtn').textContent='Start Camera';
+  }else if(state==='denied'){
+    box.classList.add('bad');
+    title.textContent='Camera access is blocked';
+    txt.textContent=message||'Open the site controls beside the address bar, set Camera to Allow, then reload or tap Retry Camera Access.';
+    btn.textContent='Retry Camera Access';
+    if(!stream)$('cameraBtn').textContent='Retry Camera';
+  }else if(state==='requesting'){
+    title.textContent='Allow camera in the browser prompt';
+    txt.textContent=message||'Choose Allow when your browser asks for camera permission.';
+    btn.textContent='Waiting for Permission…';
+    btn.disabled=true;
+  }else if(state==='unsupported'){
+    box.classList.add('bad');
+    title.textContent='Camera unavailable';
+    txt.textContent=message||'This browser or page cannot access the camera. Use a current browser over HTTPS.';
+    btn.hidden=true;
+  }else{
+    title.textContent='Camera access required';
+    txt.textContent=message||'Tap Allow Camera Access, then choose Allow in your browser prompt.';
+    btn.textContent='Allow Camera Access';
+    btn.disabled=false;
+    if(!stream)$('cameraBtn').textContent='Allow Camera & Start';
+  }
+  if(state!=='requesting')btn.disabled=false;
+}
+async function initCameraPermissionUI(){
+  if(!navigator.mediaDevices?.getUserMedia){
+    setCameraPermissionUI('unsupported','Camera access requires HTTPS and a browser that supports camera capture.');
+    return;
+  }
+  if(!navigator.permissions?.query){
+    setCameraPermissionUI('prompt');
+    return;
+  }
+  try{
+    const permission=await navigator.permissions.query({name:'camera'});
+    const sync=()=>{
+      if(permission.state==='granted')setCameraPermissionUI('granted');
+      else if(permission.state==='denied')setCameraPermissionUI('denied');
+      else setCameraPermissionUI('prompt');
+    };
+    sync();
+    permission.onchange=sync;
+  }catch(e){
+    setCameraPermissionUI('prompt');
+  }
+}
 async function startCamera(){
   if(stream){stopCamera();return;}
+  if(!navigator.mediaDevices?.getUserMedia){
+    setCameraPermissionUI('unsupported');
+    setStatus('Camera is not available in this browser.','bad');
+    return;
+  }
   try{
+    setCameraPermissionUI('requesting');
     stream=await navigator.mediaDevices.getUserMedia({
       video:{facingMode:{ideal:'environment'},width:{ideal:2560},height:{ideal:1440},frameRate:{ideal:30}},
       audio:false
     });
+    setCameraPermissionUI('granted','Camera permission granted for swap.creccommw.org.');
     $('video').srcObject=stream;
     const track=stream.getVideoTracks()[0];
     try{
@@ -319,13 +386,24 @@ async function startCamera(){
     setStatus(mode==='sort'?'Continuous sorting ready — present devices one after another.':'Camera ready — QR and S/N scanning are active.','ok');
     initOCR();
     startScanLoops();
-  }catch(e){setStatus('Camera could not start: '+e.message,'bad');}
+  }catch(e){
+    stream=null;
+    const denied=e?.name==='NotAllowedError'||e?.name==='SecurityError'||/permission|denied|not allowed/i.test(String(e?.message||''));
+    if(denied){
+      setCameraPermissionUI('denied','Camera permission was not granted. Use the site controls beside the address bar → Camera → Allow, then reload or tap Retry Camera Access.');
+      setStatus('Camera permission is required. Please allow camera access for this site.','bad');
+    }else{
+      setCameraPermissionUI('prompt','Camera could not start. Check that no other app is using the camera, then try again.');
+      setStatus('Camera could not start: '+(e?.message||e),'bad');
+    }
+  }
 }
 function stopCamera(){
   stopScanLoops();
   stream?.getTracks().forEach(t=>t.stop());
   stream=null;$('video').srcObject=null;
-  $('cameraBtn').textContent='Start Camera';$('readBtn').disabled=true;
+  $('cameraBtn').textContent=cameraPermissionState==='granted'?'Start Camera':'Allow Camera & Start';
+  $('readBtn').disabled=true;
 }
 async function scanQRFrame(){
   const v=$('video'); if(!v.videoWidth||scanBusy)return;
@@ -447,13 +525,15 @@ function showSortSuccessModal(r){
   );
 }
 function showDuplicateModal(r){
+  const when=r.scanned_at?new Date(r.scanned_at).toLocaleString():'time unavailable';
   openModal(
     '<div class="scan-modal-top">'+
       '<div class="modal-icon warn">!</div>'+
-      '<div><div class="modal-title" id="scanModalTitle">Already scanned</div><div class="modal-sub">'+esc(r.serial_number||'')+' was already recorded in this session'+(r.scanned_by?' by '+esc(r.scanned_by):'')+'.</div></div>'+
+      '<div><div class="modal-title" id="scanModalTitle">Duplicate scan</div><div class="modal-sub">'+esc(r.serial_number||'')+' is already in this sorting session.</div></div>'+
     '</div>'+
+    '<div class="modal-location"><div class="eyebrow">FIRST SCAN RECORDED BY</div><strong>'+esc(r.scanned_by||'Another user')+'</strong><div class="modal-sub" style="margin-top:5px">'+esc(when)+'</div></div>'+
     '<button class="ghost modal-action" onclick="closeScanModal()">Scan another device</button>',
-    1500
+    2600
   );
 }
 $('scanModal').addEventListener('click',e=>{if(e.target===$('scanModal'))closeScanModal();});
@@ -525,7 +605,7 @@ async function handleDetected(raw,source='MANUAL',force=false){
       showSortSuccessModal(data);
       setStatus('Recorded '+data.serial_number+' • ready for next device.','ok');
       scanCooldownUntil=Date.now()+650;
-      if(sessionScanCount%10===0) loadSessions(sessionId);
+      if(sessionScanCount%10===0) loadMySessionScans(sessionId);
     }
   }catch(e){
     setStatus('Scan error: '+(e.message||e),'bad');
@@ -585,134 +665,47 @@ function renderScan(r){
   setStatus(a.auto?'Device recorded with CommCare auto allocation • ready for next device.':'Device recorded • ready for next device.','ok');
 }
 function kv(k,v){return `<div class="kv"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`}function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-async function loadSessions(selectId){const {data,error}=await db.rpc('swap_active_sessions');if(error){$('sessionSelect').innerHTML='<option>Unable to load sessions</option>';return;}const rows=data||[],s=$('sessionSelect'),previous=selectId||s.value;s.innerHTML=rows.length?rows.map(x=>`<option value="${x.id}">${esc(x.session_name)} • ${x.scan_count} scans</option>`).join(''):'<option value="">No active session</option>';if(previous&&rows.some(x=>x.id===previous))s.value=previous;const active=rows.find(x=>x.id===s.value)||rows[0];sessionScanCount=Number(active?.scan_count||0);$('sortCount').textContent=sessionScanCount.toLocaleString();$('sessionMeta').innerHTML=rows.length?'<span class="scan-ready">Continuous scan ready</span> • '+rows.length+' active session'+(rows.length===1?'':'s'):'Ask an administrator to open a sorting session.';}
-
-
-function safeFileName(v){return String(v||'session').replace(/[^a-z0-9-_]+/gi,'_').replace(/^_+|_+$/g,'').slice(0,80)||'session';}
-async function loadAdminSessions(){
-  if(!adminPin)return;
-  const box=$('adminSessions');
-  box.innerHTML='<div class="sub">Loading session records…</div>';
-  const {data,error}=await db.rpc('swap_admin_sessions',{p_pin:adminPin});
-  if(error){box.innerHTML='<div class="status bad">'+esc(error.message)+'</div>';return;}
-  adminSessionsCache=data||[];
-  renderAdminSessions(adminSessionsCache);
-}
-function renderAdminSessions(data){
-  const box=$('adminSessions');
-  if(!data?.length){box.innerHTML='<div class="sub">No sorting sessions have been created yet.</div>';return;}
-  box.innerHTML=data.map(x=>{
-    const status=String(x.status||'').toLowerCase();
-    const opened=x.opened_at?new Date(x.opened_at).toLocaleString():'—';
-    const last=x.last_scan?new Date(x.last_scan).toLocaleString():'No scans yet';
-    return '<div class="session-card">'+
-      '<div class="session-card-top"><div><div class="session-title">'+esc(x.session_name)+' <span class="session-status '+esc(status)+'">'+esc(String(x.status||'').toUpperCase())+'</span></div>'+
-      '<div class="session-meta">Opened by '+esc(x.opened_by||'—')+' • '+esc(opened)+'<br>Last scan: '+esc(last)+'</div></div></div>'+
-      '<div class="session-metrics">'+
-        '<div class="session-metric"><strong>'+Number(x.scan_count||0).toLocaleString()+'</strong><span>SCANS</span></div>'+
-        '<div class="session-metric"><strong>'+Number(x.user_count||0).toLocaleString()+'</strong><span>USERS</span></div>'+
-        '<div class="session-metric"><strong>'+Number(x.device_count||0).toLocaleString()+'</strong><span>SCANNER DEVICES</span></div>'+
-      '</div>'+
-      '<div class="session-actions">'+
-        '<button class="secondary" onclick="downloadSession(\''+x.id+'\')">Download Session Excel</button>'+
-        (status==='active'?'<button class="danger" onclick="closeSession(\''+x.id+'\')">Close</button>':'<button class="ghost" disabled>Closed</button>')+
-      '</div>'+
-    '</div>';
-  }).join('');
-}
-async function downloadSession(id){
-  const meta=adminSessionsCache.find(x=>x.id===id);
-  showAdmin('Preparing session download…','');
-  const {data,error}=await db.rpc('swap_session_export',{p_session_id:id,p_pin:adminPin});
-  if(error){showAdmin(error.message,'bad');return;}
-  const rows=data||[];
-  const scanRows=rows.map((r,i)=>{
-    const info=r.scanner_device_info||{};
-    return {
-      'No.':i+1,
-      'Serial Number':r.serial_number||'',
-      'Item Code':r.item_code||'',
-      'Device Status':r.device_status||'',
-      'Warehouse / Allocation':r.warehouse||'',
-      'Company':r.company||'',
-      'Matched Device':r.matched_device?'Yes':'No',
-      'Allocation Source':r.allocation_source||'',
-      'Allocation Status':r.allocation_status||'',
-      'CommCare EMIS':r.commcare_emis||'',
-      'CommCare School':r.commcare_school||'',
-      'Scanned By':r.scanned_by||'',
-      'Scanned At':r.scanned_at?new Date(r.scanned_at).toLocaleString():'',
-      'Scan Method':r.scan_source||'',
-      'Scanner Device ID':r.scanner_device_id||'',
-      'Scanner Device':r.scanner_device_label||'',
-      'Platform':info.platform||'',
-      'Model':info.model||'',
-      'Browser':info.browser||'',
-      'Screen':info.screen||'',
-      'Viewport':info.viewport||''
-    };
-  });
-  const devices=new Map();
-  for(const r of rows){
-    const key=r.scanner_device_id||'Unknown';
-    const info=r.scanner_device_info||{};
-    if(!devices.has(key))devices.set(key,{id:key,label:r.scanner_device_label||'',platform:info.platform||'',model:info.model||'',browser:info.browser||'',screen:info.screen||'',scans:0,users:new Set(),first:null,last:null});
-    const d=devices.get(key);d.scans++;if(r.scanned_by)d.users.add(r.scanned_by);
-    const t=r.scanned_at?new Date(r.scanned_at):null;
-    if(t&&(!d.first||t<d.first))d.first=t;if(t&&(!d.last||t>d.last))d.last=t;
+async function loadMySessionScans(sessionId){
+  sessionScanCount=0;
+  $('sortCount').textContent='0';
+  recentScans=[];
+  renderRecentScans();
+  const name=operator.value.trim();
+  if(!sessionId)return;
+  if(name.length<2){
+    $('sessionMeta').innerHTML='<span class="scan-ready">Session ready</span> • Enter your scanner name to load your scans on this device.';
+    return;
   }
-  const deviceRows=[...devices.values()].map((d,i)=>({
-    'No.':i+1,
-    'Scanner Device ID':d.id,
-    'Device':d.label,
-    'Platform':d.platform,
-    'Model':d.model,
-    'Browser':d.browser,
-    'Screen':d.screen,
-    'Scans':d.scans,
-    'Users':Array.from(d.users).join(', '),
-    'First Scan':d.first?d.first.toLocaleString():'',
-    'Last Scan':d.last?d.last.toLocaleString():''
+  await ensureScannerDeviceProfile();
+  const {data,error}=await db.rpc('swap_my_session_scans',{
+    p_session_id:sessionId,
+    p_scanner_device_id:scannerDeviceId,
+    p_scanned_by:name
+  });
+  if(error){
+    $('sessionMeta').textContent='Could not load your scan count: '+error.message;
+    return;
+  }
+  sessionScanCount=Number(data?.count||0);
+  $('sortCount').textContent=sessionScanCount.toLocaleString();
+  recentScans=(data?.scans||[]).map(r=>({
+    serial:r.serial_number,
+    warehouse:r.warehouse||'—',
+    source:r.allocation_source==='commcare_stock_take'?'COMMCARE':(r.allocation_status==='unallocated'?'REVIEW':(r.scan_source||'SCAN')),
+    time:r.scanned_at?new Date(r.scanned_at):new Date()
   }));
-  const summary=[
-    ['CRECCOM SWAP Sorting Session'],
-    ['Session',meta?.session_name||rows[0]?.session_name||''],
-    ['Status',meta?.status||rows[0]?.session_status||''],
-    ['Opened By',meta?.opened_by||rows[0]?.opened_by||''],
-    ['Opened At',meta?.opened_at?new Date(meta.opened_at).toLocaleString():(rows[0]?.opened_at?new Date(rows[0].opened_at).toLocaleString():'')],
-    ['Closed By',meta?.closed_by||rows[0]?.closed_by||''],
-    ['Closed At',meta?.closed_at?new Date(meta.closed_at).toLocaleString():(rows[0]?.closed_at?new Date(rows[0].closed_at).toLocaleString():'')],
-    ['Total Scans',meta?.scan_count??rows.length],
-    ['Users',meta?.user_count??new Set(rows.map(r=>r.scanned_by).filter(Boolean)).size],
-    ['Scanner Devices Used',meta?.device_count??devices.size]
-  ];
-  const wb=XLSX.utils.book_new();
-  const wsSummary=XLSX.utils.aoa_to_sheet(summary);wsSummary['!cols']=[{wch:22},{wch:42}];
-  XLSX.utils.book_append_sheet(wb,wsSummary,'Session Summary');
-  const wsScans=XLSX.utils.json_to_sheet(scanRows.length?scanRows:[{'Serial Number':'No scans recorded'}]);
-  wsScans['!cols']=[{wch:7},{wch:22},{wch:16},{wch:15},{wch:38},{wch:22},{wch:14},{wch:22},{wch:22},{wch:14},{wch:38},{wch:30},{wch:16},{wch:18},{wch:14},{wch:14},{wch:14}];
-  XLSX.utils.book_append_sheet(wb,wsScans,'Scanned Devices');
-  const wsDevices=XLSX.utils.json_to_sheet(deviceRows.length?deviceRows:[{'Scanner Device ID':'No scanner device data recorded'}]);
-  wsDevices['!cols']=[{wch:7},{wch:38},{wch:30},{wch:18},{wch:20},{wch:14},{wch:14},{wch:10},{wch:28},{wch:22},{wch:22}];
-  XLSX.utils.book_append_sheet(wb,wsDevices,'Scanner Devices Used');
-  const filename='SWAP_'+safeFileName(meta?.session_name||'Sorting_Session')+'.xlsx';
-  XLSX.writeFile(wb,filename);
-  showAdmin('Session downloaded successfully.','ok');
+  renderRecentScans();
+  $('sessionMeta').innerHTML='<span class="scan-ready">Your device view</span> • Showing only scans by <b>'+esc(name)+'</b> on this device.';
 }
-async function loadMasterStats(){
-  const box=$('masterStats'); if(!box)return;
-  const {data,error}=await db.rpc('swap_master_stats');
-  if(error){box.innerHTML='<div class="status bad" style="grid-column:1/-1">'+esc(error.message)+'</div>';return;}
-  const d=data||{};
-  box.innerHTML=
-    '<div class="stat"><div class="stat-num">'+Number(d.devices||0).toLocaleString()+'</div><div class="stat-label">DEVICES</div></div>'+
-    '<div class="stat"><div class="stat-num">'+Number(d.warehouses||0).toLocaleString()+'</div><div class="stat-label">WAREHOUSES</div></div>'+
-    '<div class="stat"><div class="stat-num">'+Number(d.active||0).toLocaleString()+'</div><div class="stat-label">ACTIVE</div></div>'+
-    '<div class="stat"><div class="stat-num">'+Number(d.item_codes||0).toLocaleString()+'</div><div class="stat-label">ITEM CODES</div></div>';
-}
-function setImportState(percent,msg,type){
-  $('importBar').style.width=Math.max(0,Math.min(100,percent))+'%';
-  const el=$('importMsg'); el.textContent=msg; el.className='status '+(type||''); 
+async function loadSessions(selectId){
+  const {data,error}=await db.rpc('swap_active_sessions');
+  if(error){$('sessionSelect').innerHTML='<option>Unable to load sessions</option>';return;}
+  const rows=data||[],s=$('sessionSelect'),previous=selectId||s.value;
+  s.innerHTML=rows.length?rows.map(x=>'<option value="'+x.id+'">'+esc(x.session_name)+'</option>').join(''):'<option value="">No active session</option>';
+  if(previous&&rows.some(x=>x.id===previous))s.value=previous;
+  const active=rows.find(x=>x.id===s.value)||rows[0];
+  if(active&&!s.value)s.value=active.id;
+  await loadMySessionScans(s.value||active?.id||'');
 }
 
 function downloadImportTemplate(){
@@ -794,12 +787,12 @@ async function importMasterData(){
   }
 }
 
-$('cameraBtn').onclick=startCamera;$('readBtn').onclick=()=>readFrame(true);$('sessionSelect').addEventListener('change',()=>loadSessions($('sessionSelect').value));$('submitManual').onclick=()=>handleValue($('manual').value.trim());$('manual').addEventListener('keydown',e=>{if(e.key==='Enter')$('submitManual').click()});
+$('cameraBtn').onclick=startCamera;$('allowCameraBtn').onclick=startCamera;$('readBtn').onclick=()=>readFrame(true);$('sessionSelect').addEventListener('change',()=>loadMySessionScans($('sessionSelect').value));$('submitManual').onclick=()=>handleValue($('manual').value.trim());$('manual').addEventListener('keydown',e=>{if(e.key==='Enter')$('submitManual').click()});
 
 $('settingsBtn').onclick=()=>{const pin=prompt('Administrator code');if(pin===null)return;adminPin=pin;$('adminPanel').classList.remove('hidden');$('adminName').value=operator.value.trim();loadSessions();loadAdminSessions();loadMasterStats();$('adminPanel').scrollIntoView({behavior:'smooth'});};$('closeAdmin').onclick=()=>$('adminPanel').classList.add('hidden');$('refreshAdminSessions').onclick=loadAdminSessions;$('downloadTemplate').onclick=downloadImportTemplate;$('importMaster').onclick=importMasterData;
 $('openSession').onclick=async()=>{const n=$('sessionName').value.trim(),a=$('adminName').value.trim(),notes=$('sessionNotes').value.trim();if(!n||!a){showAdmin('Enter session and administrator names.','warn');return;}const {error}=await db.rpc('swap_open_session',{p_session_name:n,p_opened_by:a,p_notes:notes||null,p_pin:adminPin});if(error){showAdmin(error.message,'bad');return;}showAdmin('Sorting session opened.','ok');$('sessionName').value='';$('sessionNotes').value='';await loadSessions();await loadAdminSessions();};
 async function closeSession(id){const a=$('adminName').value.trim()||operator.value.trim();if(!a){showAdmin('Enter administrator name first.','warn');return;}if(!confirm('Close this sorting session?'))return;const {error}=await db.rpc('swap_close_session',{p_session_id:id,p_closed_by:a,p_pin:adminPin});if(error){showAdmin(error.message,'bad');return;}showAdmin('Session closed.','ok');await loadSessions();await loadAdminSessions();}
 function showAdmin(msg,type){const e=$('adminMsg');e.textContent=msg;e.className='status '+type;}
-ensureScannerDeviceProfile();loadSessions();
+ensureScannerDeviceProfile();initCameraPermissionUI();loadSessions();
 </script>
 </body></html>
