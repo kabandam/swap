@@ -25,7 +25,7 @@
     main{padding:16px}.tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;background:#eaf0f8;padding:5px;border-radius:12px;margin-bottom:14px}.tab{background:transparent;color:#5d6777}.tab.active{background:#fff;color:var(--blue);box-shadow:0 1px 4px #0001}
     .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px;box-shadow:0 6px 24px #1231  }
     .label{font-size:12px;font-weight:700;color:#596274;margin-bottom:7px}.field{width:100%;border:1px solid #d7dce3;border-radius:10px;padding:12px 13px;font:inherit;outline:none}.field:focus{border-color:#5f95e7;box-shadow:0 0 0 3px #1976d214}
-    .camera{position:relative;overflow:hidden;border-radius:14px;background:#101418;aspect-ratio:4/3}.camera video{width:100%;height:100%;object-fit:cover}.guide{position:absolute;left:6%;right:6%;top:37%;height:26%;border:2px solid #fff;border-radius:12px;box-shadow:0 0 0 999px #0007}.guide:before{content:'Aim the QR code or S/N line inside this box';position:absolute;top:-32px;left:0;right:0;text-align:center;color:#fff;font-size:12px;font-weight:700;text-shadow:0 1px 2px #000}.scanline{position:absolute;left:8%;right:8%;top:49%;height:2px;background:#53e0ff;box-shadow:0 0 12px #53e0ff}.cam-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.status{margin-top:10px;border-radius:10px;padding:10px 12px;font-size:13px;background:#f3f4f6}.status.ok{background:#e9f8ef;color:#08783f}.status.warn{background:#fff6df;color:#8a5b00}.status.bad{background:#fdeceb;color:#a6251d}
+    .camera{position:relative;overflow:hidden;border-radius:14px;background:#101418;aspect-ratio:4/3}.camera video{width:100%;height:100%;object-fit:cover}.guide,.scanline{display:none}.cam-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.status{margin-top:10px;border-radius:10px;padding:10px 12px;font-size:13px;background:#f3f4f6}.status.ok{background:#e9f8ef;color:#08783f}.status.warn{background:#fff6df;color:#8a5b00}.status.bad{background:#fdeceb;color:#a6251d}
     .result{display:none}.result.show{display:block}.kv{display:grid;grid-template-columns:120px 1fr;gap:8px 12px;padding:7px 0;border-bottom:1px solid #edf0f3}.kv:last-child{border-bottom:0}.k{font-size:12px;color:var(--muted);font-weight:700}.v{font-size:13px;font-weight:600;word-break:break-word}
     .session{display:flex;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid #edf0f3}.session:last-child{border-bottom:0}.session b{font-size:13px}.session small{color:var(--muted)}
     .pill{display:inline-flex;padding:5px 8px;border-radius:999px;background:#e9f8ef;color:#08783f;font-size:11px;font-weight:800}.pill.commcare{background:#fff3e6;color:#a45300}.pill.unallocated{background:#fff0ef;color:#a6251d}.allocation-note{margin-top:10px;padding:10px 12px;border-radius:10px;background:#fff8ea;border:1px solid #f5dfaf;color:#79520a;font-size:12px;line-height:1.45}.hidden{display:none!important}.footer-note{font-size:11px;color:var(--muted);text-align:center;padding:12px}
@@ -97,7 +97,7 @@
     </div>
     <canvas id="canvas" class="hidden"></canvas><canvas id="qrCanvas" class="hidden"></canvas>
     <div class="cam-actions"><button id="cameraBtn" class="primary">Start Camera</button><button id="readBtn" class="secondary" disabled>Read S/N Now</button></div>
-    <div id="scanStatus" class="status">Hybrid scanner ready: QR and S/N recognition run together for faster capture.</div>
+    <div id="scanStatus" class="status">Wide-open scanner ready: QR and S/N recognition use the full camera view.</div>
   </section>
 
   <section class="card">
@@ -222,7 +222,7 @@ async function initOCR(){
     await ocrWorker.setParameters({
       tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:/- ',
       preserve_interword_spaces:'1',
-      tessedit_pageseg_mode:'7'
+      tessedit_pageseg_mode:'11'
     });
   }
 }
@@ -354,8 +354,14 @@ async function readFrame(force=true){
   try{
     await initOCR();
     const v=$('video');if(!v.videoWidth)return;
-    const sx=Math.round(v.videoWidth*.04),sy=Math.round(v.videoHeight*.34),sw=Math.round(v.videoWidth*.92),sh=Math.round(v.videoHeight*.32);
-    const c=$('canvas');c.width=Math.round(sw*2.2);c.height=Math.round(sh*2.2);
+    // Scan almost the full camera frame instead of a narrow centre strip.
+    // Downscale before OCR so the larger area is still faster to process.
+    const sx=Math.round(v.videoWidth*.02),sy=Math.round(v.videoHeight*.04);
+    const sw=Math.round(v.videoWidth*.96),sh=Math.round(v.videoHeight*.92);
+    const maxW=1500,maxH=950,scale=Math.min(1,maxW/sw,maxH/sh);
+    const c=$('canvas');
+    c.width=Math.max(1,Math.round(sw*scale));
+    c.height=Math.max(1,Math.round(sh*scale));
     const x=c.getContext('2d',{willReadFrequently:true});
     x.drawImage(v,sx,sy,sw,sh,0,0,c.width,c.height);
     preprocess(x,c.width,c.height);
