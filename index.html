@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0d47a1" />
+  <title>CRECCOM SWAP Scanner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <style>
+    :root{--blue:#0d47a1;--blue2:#1565c0;--ink:#172033;--muted:#6b7280;--bg:#f4f7fb;--card:#fff;--line:#e5e7eb;--ok:#0f9d58;--warn:#f59e0b;--bad:#d93025;--r:12px}
+    *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+    .app{min-height:100dvh;max-width:780px;margin:auto;background:var(--bg)}
+    header{position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid var(--line);padding:14px 16px;display:flex;align-items:center;gap:12px}
+    .mark{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,var(--blue),#1e88e5);display:grid;place-items:center;color:#fff;font-weight:800}
+    h1{font-size:17px;margin:0}.sub{font-size:12px;color:var(--muted);margin-top:2px}.spacer{flex:1}
+    button,.btn{font:inherit;border:0;border-radius:10px;padding:12px 14px;font-weight:700;cursor:pointer}.primary{background:var(--blue);color:#fff}.secondary{background:#eef4ff;color:var(--blue)}.ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}.danger{background:#fff0ef;color:var(--bad)}
+    main{padding:16px}.tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;background:#eaf0f8;padding:5px;border-radius:12px;margin-bottom:14px}.tab{background:transparent;color:#5d6777}.tab.active{background:#fff;color:var(--blue);box-shadow:0 1px 4px #0001}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px;box-shadow:0 6px 24px #1231  }
+    .label{font-size:12px;font-weight:700;color:#596274;margin-bottom:7px}.field{width:100%;border:1px solid #d7dce3;border-radius:10px;padding:12px 13px;font:inherit;outline:none}.field:focus{border-color:#5f95e7;box-shadow:0 0 0 3px #1976d214}
+    .camera{position:relative;overflow:hidden;border-radius:14px;background:#101418;aspect-ratio:4/3}.camera video{width:100%;height:100%;object-fit:cover}.guide{position:absolute;left:6%;right:6%;top:37%;height:26%;border:2px solid #fff;border-radius:12px;box-shadow:0 0 0 999px #0007}.guide:before{content:'Align the S/N: line inside this box';position:absolute;top:-32px;left:0;right:0;text-align:center;color:#fff;font-size:12px;font-weight:700;text-shadow:0 1px 2px #000}.scanline{position:absolute;left:8%;right:8%;top:49%;height:2px;background:#53e0ff;box-shadow:0 0 12px #53e0ff}.cam-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.status{margin-top:10px;border-radius:10px;padding:10px 12px;font-size:13px;background:#f3f4f6}.status.ok{background:#e9f8ef;color:#08783f}.status.warn{background:#fff6df;color:#8a5b00}.status.bad{background:#fdeceb;color:#a6251d}
+    .result{display:none}.result.show{display:block}.kv{display:grid;grid-template-columns:120px 1fr;gap:8px 12px;padding:7px 0;border-bottom:1px solid #edf0f3}.kv:last-child{border-bottom:0}.k{font-size:12px;color:var(--muted);font-weight:700}.v{font-size:13px;font-weight:600;word-break:break-word}
+    .session{display:flex;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid #edf0f3}.session:last-child{border-bottom:0}.session b{font-size:13px}.session small{color:var(--muted)}
+    .pill{display:inline-flex;padding:5px 8px;border-radius:999px;background:#e9f8ef;color:#08783f;font-size:11px;font-weight:800}.hidden{display:none!important}.footer-note{font-size:11px;color:var(--muted);text-align:center;padding:12px}
+    @media(min-width:640px){main{padding:22px}.camera{aspect-ratio:16/10}}
+  </style>
+</head>
+<body>
+<div class="app">
+<header><div class="mark">S</div><div><h1>CRECCOM SWAP Scanner</h1><div class="sub">Serial-first tablet identification</div></div><div class="spacer"></div><button id="settingsBtn" class="ghost" style="padding:9px 11px">Admin</button></header>
+<main>
+  <div class="tabs"><button class="tab active" data-mode="find">Find Device</button><button class="tab" data-mode="sort">Device Sorting</button></div>
+
+  <section class="card">
+    <div class="label">Scanner name</div>
+    <input id="operator" class="field" placeholder="Enter your name" autocomplete="name" />
+  </section>
+
+  <section id="sortSessionCard" class="card hidden">
+    <div class="label">Active sorting session</div>
+    <select id="sessionSelect" class="field"><option value="">Loading sessions…</option></select>
+    <div id="sessionMeta" class="sub" style="margin-top:8px"></div>
+  </section>
+
+  <section class="card">
+    <div class="camera">
+      <video id="video" autoplay playsinline muted></video>
+      <div class="guide"></div><div class="scanline"></div>
+    </div>
+    <canvas id="canvas" class="hidden"></canvas>
+    <div class="cam-actions"><button id="cameraBtn" class="primary">Start Camera</button><button id="readBtn" class="secondary" disabled>Read S/N Now</button></div>
+    <div id="scanStatus" class="status">Serial recognition is prioritized. QR is used only if text recognition fails.</div>
+  </section>
+
+  <section class="card">
+    <div class="label">Manual serial / scanned text</div>
+    <div style="display:grid;grid-template-columns:1fr auto;gap:8px"><input id="manual" class="field" placeholder="e.g. BM2542000080377 or S/N: ..." /><button id="submitManual" class="ghost">Check</button></div>
+  </section>
+
+  <section id="resultCard" class="card result"></section>
+
+  <section id="adminPanel" class="card hidden">
+    <div style="display:flex;align-items:center;gap:8px"><div><b>Sorting session administration</b><div class="sub">Open or close a session before warehouse sorting starts.</div></div><div class="spacer"></div><button id="closeAdmin" class="ghost">Close</button></div>
+    <div style="height:12px"></div>
+    <div class="label">Session name</div><input id="sessionName" class="field" placeholder="e.g. Warehouse Sorting - 26 Sep" />
+    <div style="height:10px"></div><div class="label">Administrator name</div><input id="adminName" class="field" placeholder="Administrator" />
+    <div style="height:10px"></div><div class="label">Notes (optional)</div><input id="sessionNotes" class="field" placeholder="Purpose / warehouse / batch" />
+    <div style="height:10px"></div><button id="openSession" class="primary" style="width:100%">Open Sorting Session</button>
+    <div id="adminMsg" class="status hidden"></div>
+    <div id="adminSessions" style="margin-top:12px"></div>
+  </section>
+
+  <div class="footer-note">SWAP • CRECCOM device sorting and warehouse lookup</div>
+</main></div>
+<script>
+const SUPABASE_URL='https://xtodkzecgxqqxfyvksmm.supabase.co';
+const SUPABASE_KEY='sb_publishable_1vVhp31vXV__B_Wv7DFClg_pGAEz6dQ';
+const db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+const $=id=>document.getElementById(id);
+let mode='find',stream=null,ocrWorker=null,reading=false,lastCandidate='',sameCount=0,loopTimer=null,adminPin='';
+const operator=$('operator'); operator.value=localStorage.getItem('swap_operator')||''; operator.addEventListener('change',()=>localStorage.setItem('swap_operator',operator.value.trim()));
+
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');mode=b.dataset.mode;$('sortSessionCard').classList.toggle('hidden',mode!=='sort');$('resultCard').classList.remove('show');if(mode==='sort')loadSessions();});
+
+function setStatus(msg,type=''){const s=$('scanStatus');s.textContent=msg;s.className='status'+(type?' '+type:'');}
+function cleanCandidate(s){return (s||'').toUpperCase().replace(/[s-_:]/g,'').replace(/[^A-Z0-9]/g,'');}
+function extractSerial(text){
+  const t=(text||'').toUpperCase().replace(/[|]/g,'I');
+  let m=t.match(/Ss*[/.\-]?s*Ns*[:#-]?s*([A-Z0-9][A-Z0-9s-]{7,24})/i);
+  if(m){const x=cleanCandidate(m[1]); if(x.length>=8&&x.length<=24)return x;}
+  const tokens=t.match(/[A-Z0-9]{8,24}/g)||[];
+  return tokens.sort((a,b)=>b.length-a.length)[0]||null;
+}
+function preprocess(ctx,w,h){
+  const im=ctx.getImageData(0,0,w,h),d=im.data;
+  for(let i=0;i<d.length;i+=4){let y=.299*d[i]+.587*d[i+1]+.114*d[i+2];y=y>150?255:(y<95?0:(y-95)*4.63);d[i]=d[i+1]=d[i+2]=y;}
+  ctx.putImageData(im,0,0);
+}
+async function initOCR(){if(!ocrWorker){setStatus('Preparing serial-number recognizer…');ocrWorker=await Tesseract.createWorker('eng',1,{logger:m=>{if(m.status==='recognizing text')setStatus('Reading S/N… '+Math.round((m.progress||0)*100)+'%');}});await ocrWorker.setParameters({tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:/- ',preserve_interword_spaces:'1'});}}
+async function startCamera(){
+  if(stream){stopCamera();return;}
+  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},advanced:[{focusMode:'continuous'}]},audio:false});$('video').srcObject=stream;$('cameraBtn').textContent='Stop Camera';$('readBtn').disabled=false;setStatus('Camera ready. Hold the S/N line inside the guide.','ok');initOCR();scheduleLoop();}catch(e){setStatus('Camera could not start: '+e.message,'bad');}
+}
+function stopCamera(){if(loopTimer)clearTimeout(loopTimer);loopTimer=null;stream?.getTracks().forEach(t=>t.stop());stream=null;$('video').srcObject=null;$('cameraBtn').textContent='Start Camera';$('readBtn').disabled=true;}
+function scheduleLoop(){if(!stream)return;loopTimer=setTimeout(async()=>{if(!reading)await readFrame(false);scheduleLoop();},1800);}
+async function readFrame(force=true){
+  if(!stream||reading)return; reading=true;
+  try{await initOCR();const v=$('video');if(!v.videoWidth)return;const sx=Math.round(v.videoWidth*.06),sy=Math.round(v.videoHeight*.37),sw=Math.round(v.videoWidth*.88),sh=Math.round(v.videoHeight*.26);const c=$('canvas');c.width=sw*2;c.height=sh*2;const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(v,sx,sy,sw,sh,0,0,c.width,c.height);preprocess(x,c.width,c.height);const {data}=await ocrWorker.recognize(c);const candidate=extractSerial(data.text);if(candidate){if(candidate===lastCandidate)sameCount++;else{lastCandidate=candidate;sameCount=1;}setStatus(`S/N candidate: ${candidate} (${sameCount}/2 confirmations)`,'warn');if(force||sameCount>=2){sameCount=0;lastCandidate='';await handleValue(candidate);}}else if(force)setStatus('No clear S/N detected. Move closer and keep the serial line level.','warn');}
+  catch(e){setStatus('Serial reading error: '+e.message,'bad');}finally{reading=false;}
+}
+async function handleValue(raw){
+  const name=operator.value.trim();if(!name){setStatus('Enter your name before scanning.','warn');operator.focus();return;}
+  setStatus('Checking '+raw+'…');
+  if(mode==='find'){
+    const {data,error}=await db.rpc('swap_lookup_device',{p_value:raw});if(error){setStatus(error.message,'bad');return;}renderLookup((data||[])[0]);
+  }else{
+    const sessionId=$('sessionSelect').value;if(!sessionId){setStatus('Select an active sorting session first.','warn');return;}
+    const {data,error}=await db.rpc('swap_scan_device',{p_session_id:sessionId,p_value:raw,p_scanned_by:name});if(error){setStatus(error.message,'bad');return;}renderScan(data);await loadSessions(sessionId);
+  }
+}
+function renderLookup(r){const card=$('resultCard');card.classList.add('show');if(!r||!r.found){card.innerHTML=`<b>Device not found</b><div class="status warn">Serial ${r?.serial_number||''} is not yet in the master table.</div>`;setStatus('Serial read successfully, but no master record was found.','warn');return;}card.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><b>Device found</b><span class="pill">MATCHED</span></div>${kv('Serial number',r.serial_number)}${kv('Warehouse / Location',r.lookup_warehouse||r.warehouse||'—')}${kv('Item code',r.item_code||'—')}${kv('Status',r.device_status||'—')}${kv('Location source',r.location_source||'—')}${kv('Company',r.company||'—')}`;setStatus('Device located successfully.','ok');}
+function renderScan(r){const card=$('resultCard');card.classList.add('show');if(r.status==='duplicate'){card.innerHTML=`<b>Already scanned</b><div class="status bad">${r.serial_number} was already scanned in this session by <b>${esc(r.scanned_by||'another user')}</b>.</div>`;setStatus('Duplicate blocked.','bad');return;}card.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><b>Scan recorded</b><span class="pill">${r.matched_device?'MATCHED':'UNKNOWN'}</span></div>${kv('Serial number',r.serial_number)}${kv('Warehouse / Location',r.warehouse||'—')}${kv('Scanned by',r.scanned_by||'—')}${kv('Recorded',new Date(r.scanned_at).toLocaleString())}`;setStatus('Device recorded in the session.','ok');}
+function kv(k,v){return `<div class="kv"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`}function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+async function loadSessions(selectId){const {data,error}=await db.rpc('swap_active_sessions');if(error){$('sessionSelect').innerHTML='<option>Unable to load sessions</option>';return;}const s=$('sessionSelect');s.innerHTML=(data||[]).length?(data||[]).map(x=>`<option value="${x.id}">${esc(x.session_name)} • ${x.scan_count} scans</option>`).join(''):'<option value="">No active session</option>';if(selectId)s.value=selectId;$('sessionMeta').textContent=(data||[]).length?`${data.length} active session${data.length===1?'':'s'}`:'Ask an administrator to open a sorting session.';renderAdminSessions(data||[]);}
+
+$('cameraBtn').onclick=startCamera;$('readBtn').onclick=()=>readFrame(true);$('submitManual').onclick=()=>handleValue($('manual').value.trim());$('manual').addEventListener('keydown',e=>{if(e.key==='Enter')$('submitManual').click()});
+
+$('settingsBtn').onclick=()=>{const pin=prompt('Administrator code');if(pin===null)return;adminPin=pin;$('adminPanel').classList.remove('hidden');$('adminName').value=operator.value.trim();loadSessions();$('adminPanel').scrollIntoView({behavior:'smooth'});};$('closeAdmin').onclick=()=>$('adminPanel').classList.add('hidden');
+$('openSession').onclick=async()=>{const n=$('sessionName').value.trim(),a=$('adminName').value.trim(),notes=$('sessionNotes').value.trim();if(!n||!a){showAdmin('Enter session and administrator names.','warn');return;}const {error}=await db.rpc('swap_open_session',{p_session_name:n,p_opened_by:a,p_notes:notes||null,p_pin:adminPin});if(error){showAdmin(error.message,'bad');return;}showAdmin('Sorting session opened.','ok');$('sessionName').value='';$('sessionNotes').value='';await loadSessions();};
+async function closeSession(id){const a=$('adminName').value.trim()||operator.value.trim();if(!a){showAdmin('Enter administrator name first.','warn');return;}if(!confirm('Close this sorting session?'))return;const {error}=await db.rpc('swap_close_session',{p_session_id:id,p_closed_by:a,p_pin:adminPin});if(error){showAdmin(error.message,'bad');return;}showAdmin('Session closed.','ok');await loadSessions();}
+function renderAdminSessions(data){const box=$('adminSessions');if(!data?.length){box.innerHTML='<div class="sub">No active sessions.</div>';return;}box.innerHTML=data.map(x=>`<div class="session"><div><b>${esc(x.session_name)}</b><br><small>${x.scan_count} scans • opened by ${esc(x.opened_by)}</small></div><div class="spacer"></div><button class="danger" onclick="closeSession('${x.id}')">Close</button></div>`).join('');}
+function showAdmin(msg,type){const e=$('adminMsg');e.textContent=msg;e.className='status '+type;}
+loadSessions();
+</script>
+</body></html>
