@@ -10,6 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
     :root{--blue:#0d47a1;--blue2:#1565c0;--ink:#172033;--muted:#6b7280;--bg:#f4f7fb;--card:#fff;--line:#e5e7eb;--ok:#0f9d58;--warn:#f59e0b;--bad:#d93025;--r:12px}
     *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--ink)}
@@ -25,12 +26,23 @@
     .result{display:none}.result.show{display:block}.kv{display:grid;grid-template-columns:120px 1fr;gap:8px 12px;padding:7px 0;border-bottom:1px solid #edf0f3}.kv:last-child{border-bottom:0}.k{font-size:12px;color:var(--muted);font-weight:700}.v{font-size:13px;font-weight:600;word-break:break-word}
     .session{display:flex;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid #edf0f3}.session:last-child{border-bottom:0}.session b{font-size:13px}.session small{color:var(--muted)}
     .pill{display:inline-flex;padding:5px 8px;border-radius:999px;background:#e9f8ef;color:#08783f;font-size:11px;font-weight:800}.hidden{display:none!important}.footer-note{font-size:11px;color:var(--muted);text-align:center;padding:12px}
-    @media(min-width:640px){main{padding:22px}.camera{aspect-ratio:16/10}}
+    .admin-section{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+    .section-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:13px;font-weight:800}
+    .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:10px 0 12px}
+    .stat{border:1px solid var(--line);background:#f8fafc;border-radius:10px;padding:10px}
+    .stat-num{font-size:18px;font-weight:800;letter-spacing:-.02em}.stat-label{font-size:10px;color:var(--muted);font-weight:700;margin-top:2px}
+    .filebox{border:1px dashed #b8c5d9;background:#f8fbff;border-radius:12px;padding:12px}
+    .progress{height:8px;border-radius:999px;background:#e8edf4;overflow:hidden;margin-top:10px}.progress span{display:block;height:100%;width:0;background:var(--blue);transition:width .2s ease}
+    .eyebrow{font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+    .locationHero{font-size:18px;font-weight:800;line-height:1.25;margin:5px 0 10px;letter-spacing:-.02em}
+    button{min-height:44px}.field{min-height:44px}
+    @media(max-width:420px){.kv{grid-template-columns:105px 1fr}.cam-actions{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}}
+    @media(min-width:640px){main{padding:22px}.camera{aspect-ratio:16/10}.stats{grid-template-columns:repeat(4,1fr)}}
   </style>
 </head>
 <body>
 <div class="app">
-<header><div class="mark">S</div><div><h1>CRECCOM SWAP Scanner</h1><div class="sub">Serial-first tablet identification</div></div><div class="spacer"></div><button id="settingsBtn" class="ghost" style="padding:9px 11px">Admin</button></header>
+<header><div class="mark">S</div><div><h1>CRECCOM SWAP Scanner</h1><div class="sub">Warehouse asset scanner • Serial-first recognition</div></div><div class="spacer"></div><button id="settingsBtn" class="ghost" style="padding:9px 11px">Admin</button></header>
 <main>
   <div class="tabs"><button class="tab active" data-mode="find">Find Device</button><button class="tab" data-mode="sort">Device Sorting</button></div>
 
@@ -71,6 +83,24 @@
     <div style="height:10px"></div><button id="openSession" class="primary" style="width:100%">Open Sorting Session</button>
     <div id="adminMsg" class="status hidden"></div>
     <div id="adminSessions" style="margin-top:12px"></div>
+    <div class="admin-section">
+      <div class="section-head"><span>Master device data</span><span id="masterBadge" class="pill">SUPABASE</span></div>
+      <div class="sub">Authoritative source: <b>Crecom - Data(2).xlsx</b> • Sheet: <b>Serial No</b></div>
+      <div id="masterStats" class="stats">
+        <div class="stat"><div class="stat-num">—</div><div class="stat-label">DEVICES</div></div>
+        <div class="stat"><div class="stat-num">—</div><div class="stat-label">WAREHOUSES</div></div>
+        <div class="stat"><div class="stat-num">—</div><div class="stat-label">ACTIVE</div></div>
+        <div class="stat"><div class="stat-num">—</div><div class="stat-label">ITEM CODES</div></div>
+      </div>
+      <div class="filebox">
+        <div class="label">Replace master data from CRECCOM Excel</div>
+        <input id="masterFile" class="field" type="file" accept=".xlsx,.xls" />
+        <div class="sub" style="margin:8px 0 10px">Expected columns: Sr, ID, Document Status, Item Code, Status, Warehouse, Company, Created By. For the 431k-row master, run this import from a desktop browser.</div>
+        <button id="importMaster" class="primary" style="width:100%">Import / Replace Master Data</button>
+        <div class="progress"><span id="importBar"></span></div>
+        <div id="importMsg" class="status hidden"></div>
+      </div>
+    </div>
   </section>
 
   <div class="footer-note">SWAP • CRECCOM device sorting and warehouse lookup</div>
@@ -86,10 +116,10 @@ const operator=$('operator'); operator.value=localStorage.getItem('swap_operator
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');mode=b.dataset.mode;$('sortSessionCard').classList.toggle('hidden',mode!=='sort');$('resultCard').classList.remove('show');if(mode==='sort')loadSessions();});
 
 function setStatus(msg,type=''){const s=$('scanStatus');s.textContent=msg;s.className='status'+(type?' '+type:'');}
-function cleanCandidate(s){return (s||'').toUpperCase().replace(/[s-_:]/g,'').replace(/[^A-Z0-9]/g,'');}
+function cleanCandidate(s){return (s||'').toUpperCase().replace(/[\s\-_:]/g,'').replace(/[^A-Z0-9]/g,'');}
 function extractSerial(text){
-  const t=(text||'').toUpperCase().replace(/[|]/g,'I');
-  let m=t.match(/Ss*[/.\-]?s*Ns*[:#-]?s*([A-Z0-9][A-Z0-9s-]{7,24})/i);
+  const t=(text||'').toUpperCase().replace(/\|/g,'I');
+  let m=t.match(/S\s*[\/.\-]?\s*N\s*[:#-]?\s*([A-Z0-9][A-Z0-9\s-]{7,24})/i);
   if(m){const x=cleanCandidate(m[1]); if(x.length>=8&&x.length<=24)return x;}
   const tokens=t.match(/[A-Z0-9]{8,24}/g)||[];
   return tokens.sort((a,b)=>b.length-a.length)[0]||null;
@@ -121,14 +151,79 @@ async function handleValue(raw){
     const {data,error}=await db.rpc('swap_scan_device',{p_session_id:sessionId,p_value:raw,p_scanned_by:name});if(error){setStatus(error.message,'bad');return;}renderScan(data);await loadSessions(sessionId);
   }
 }
-function renderLookup(r){const card=$('resultCard');card.classList.add('show');if(!r||!r.found){card.innerHTML=`<b>Device not found</b><div class="status warn">Serial ${r?.serial_number||''} is not yet in the master table.</div>`;setStatus('Serial read successfully, but no master record was found.','warn');return;}card.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><b>Device found</b><span class="pill">MATCHED</span></div>${kv('Serial number',r.serial_number)}${kv('Warehouse / Location',r.lookup_warehouse||r.warehouse||'—')}${kv('Item code',r.item_code||'—')}${kv('Status',r.device_status||'—')}${kv('Location source',r.location_source||'—')}${kv('Company',r.company||'—')}`;setStatus('Device located successfully.','ok');}
+function renderLookup(r){const card=$('resultCard');card.classList.add('show');if(!r||!r.found){card.innerHTML='<b>Device not found</b><div class="status warn">Serial '+esc(r?.serial_number||'')+' is not yet in the master table.</div>';setStatus('Serial read successfully, but no master record was found.','warn');return;}const loc=r.lookup_warehouse||r.warehouse||'Location not recorded';card.innerHTML='<div style="display:flex;align-items:center;gap:8px"><div class="eyebrow">Device location</div><div class="spacer"></div><span class="pill">MATCHED</span></div><div class="locationHero">'+esc(loc)+'</div>'+kv('Serial number',r.serial_number)+kv('Item code',r.item_code||'—')+kv('Status',r.device_status||'—')+kv('Company',r.company||'—');setStatus('Device located successfully.','ok');}
 function renderScan(r){const card=$('resultCard');card.classList.add('show');if(r.status==='duplicate'){card.innerHTML=`<b>Already scanned</b><div class="status bad">${r.serial_number} was already scanned in this session by <b>${esc(r.scanned_by||'another user')}</b>.</div>`;setStatus('Duplicate blocked.','bad');return;}card.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><b>Scan recorded</b><span class="pill">${r.matched_device?'MATCHED':'UNKNOWN'}</span></div>${kv('Serial number',r.serial_number)}${kv('Warehouse / Location',r.warehouse||'—')}${kv('Scanned by',r.scanned_by||'—')}${kv('Recorded',new Date(r.scanned_at).toLocaleString())}`;setStatus('Device recorded in the session.','ok');}
 function kv(k,v){return `<div class="kv"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`}function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 async function loadSessions(selectId){const {data,error}=await db.rpc('swap_active_sessions');if(error){$('sessionSelect').innerHTML='<option>Unable to load sessions</option>';return;}const s=$('sessionSelect');s.innerHTML=(data||[]).length?(data||[]).map(x=>`<option value="${x.id}">${esc(x.session_name)} • ${x.scan_count} scans</option>`).join(''):'<option value="">No active session</option>';if(selectId)s.value=selectId;$('sessionMeta').textContent=(data||[]).length?`${data.length} active session${data.length===1?'':'s'}`:'Ask an administrator to open a sorting session.';renderAdminSessions(data||[]);}
 
+
+async function loadMasterStats(){
+  const box=$('masterStats'); if(!box)return;
+  const {data,error}=await db.rpc('swap_master_stats');
+  if(error){box.innerHTML='<div class="status bad" style="grid-column:1/-1">'+esc(error.message)+'</div>';return;}
+  const d=data||{};
+  box.innerHTML=
+    '<div class="stat"><div class="stat-num">'+Number(d.devices||0).toLocaleString()+'</div><div class="stat-label">DEVICES</div></div>'+
+    '<div class="stat"><div class="stat-num">'+Number(d.warehouses||0).toLocaleString()+'</div><div class="stat-label">WAREHOUSES</div></div>'+
+    '<div class="stat"><div class="stat-num">'+Number(d.active||0).toLocaleString()+'</div><div class="stat-label">ACTIVE</div></div>'+
+    '<div class="stat"><div class="stat-num">'+Number(d.item_codes||0).toLocaleString()+'</div><div class="stat-label">ITEM CODES</div></div>';
+}
+function setImportState(percent,msg,type){
+  $('importBar').style.width=Math.max(0,Math.min(100,percent))+'%';
+  const el=$('importMsg'); el.textContent=msg; el.className='status '+(type||''); 
+}
+async function importMasterData(){
+  const file=$('masterFile').files[0];
+  if(!file){setImportState(0,'Choose Crecom - Data(2).xlsx first.','warn');return;}
+  if(!adminPin){setImportState(0,'Administrator code is required.','bad');return;}
+  if(!confirm('Replace the current SWAP master data with this Excel file? Sorting scan history will not be deleted.'))return;
+  const btn=$('importMaster'); btn.disabled=true; btn.textContent='Reading Excel…';
+  try{
+    setImportState(2,'Reading '+file.name+'…','');
+    const buf=await file.arrayBuffer();
+    const book=XLSX.read(buf,{type:'array'});
+    const sheet=book.Sheets['Serial No']||book.Sheets[book.SheetNames[0]];
+    if(!sheet)throw new Error('No worksheet found.');
+    const rows=XLSX.utils.sheet_to_json(sheet,{defval:'',raw:false});
+    if(!rows.length)throw new Error('The worksheet is empty.');
+    const required=['Sr','ID','Document Status','Item Code','Status','Warehouse','Company','Created By'];
+    const keys=Object.keys(rows[0]||{});
+    const missing=required.filter(k=>!keys.includes(k));
+    if(missing.length)throw new Error('Missing columns: '+missing.join(', '));
+    const valid=rows.filter(r=>String(r['ID']||'').trim());
+    const batchSize=5000;
+    let done=0;
+    btn.textContent='Importing…';
+    for(let i=0;i<valid.length;i+=batchSize){
+      const batch=valid.slice(i,i+batchSize).map((r,j)=>({
+        sr:Number(r['Sr'])||i+j+1,
+        id:String(r['ID']||'').trim(),
+        document_status:String(r['Document Status']||'').trim(),
+        item_code:String(r['Item Code']||'').trim(),
+        status:String(r['Status']||'').trim(),
+        warehouse:String(r['Warehouse']||'').trim(),
+        company:String(r['Company']||'').trim(),
+        created_by:String(r['Created By']||'').trim()
+      }));
+      const {error}=await db.rpc('swap_import_master_batch',{p_pin:adminPin,p_rows:batch,p_reset:i===0});
+      if(error)throw error;
+      done+=batch.length;
+      const pct=5+Math.round((done/valid.length)*93);
+      setImportState(pct,'Imported '+done.toLocaleString()+' of '+valid.length.toLocaleString()+' devices…','');
+      await new Promise(r=>setTimeout(r,20));
+    }
+    setImportState(100,'Master data imported successfully: '+done.toLocaleString()+' devices.','ok');
+    await loadMasterStats();
+  }catch(e){
+    setImportState(0,'Import failed: '+(e.message||e),'bad');
+  }finally{
+    btn.disabled=false; btn.textContent='Import / Replace Master Data';
+  }
+}
+
 $('cameraBtn').onclick=startCamera;$('readBtn').onclick=()=>readFrame(true);$('submitManual').onclick=()=>handleValue($('manual').value.trim());$('manual').addEventListener('keydown',e=>{if(e.key==='Enter')$('submitManual').click()});
 
-$('settingsBtn').onclick=()=>{const pin=prompt('Administrator code');if(pin===null)return;adminPin=pin;$('adminPanel').classList.remove('hidden');$('adminName').value=operator.value.trim();loadSessions();$('adminPanel').scrollIntoView({behavior:'smooth'});};$('closeAdmin').onclick=()=>$('adminPanel').classList.add('hidden');
+$('settingsBtn').onclick=()=>{const pin=prompt('Administrator code');if(pin===null)return;adminPin=pin;$('adminPanel').classList.remove('hidden');$('adminName').value=operator.value.trim();loadSessions();loadMasterStats();$('adminPanel').scrollIntoView({behavior:'smooth'});};$('closeAdmin').onclick=()=>$('adminPanel').classList.add('hidden');$('importMaster').onclick=importMasterData;
 $('openSession').onclick=async()=>{const n=$('sessionName').value.trim(),a=$('adminName').value.trim(),notes=$('sessionNotes').value.trim();if(!n||!a){showAdmin('Enter session and administrator names.','warn');return;}const {error}=await db.rpc('swap_open_session',{p_session_name:n,p_opened_by:a,p_notes:notes||null,p_pin:adminPin});if(error){showAdmin(error.message,'bad');return;}showAdmin('Sorting session opened.','ok');$('sessionName').value='';$('sessionNotes').value='';await loadSessions();};
 async function closeSession(id){const a=$('adminName').value.trim()||operator.value.trim();if(!a){showAdmin('Enter administrator name first.','warn');return;}if(!confirm('Close this sorting session?'))return;const {error}=await db.rpc('swap_close_session',{p_session_id:id,p_closed_by:a,p_pin:adminPin});if(error){showAdmin(error.message,'bad');return;}showAdmin('Session closed.','ok');await loadSessions();}
 function renderAdminSessions(data){const box=$('adminSessions');if(!data?.length){box.innerHTML='<div class="sub">No active sessions.</div>';return;}box.innerHTML=data.map(x=>`<div class="session"><div><b>${esc(x.session_name)}</b><br><small>${x.scan_count} scans • opened by ${esc(x.opened_by)}</small></div><div class="spacer"></div><button class="danger" onclick="closeSession('${x.id}')">Close</button></div>`).join('');}
