@@ -29,6 +29,12 @@
     .pill{display:inline-flex;padding:5px 8px;border-radius:999px;background:#e9f8ef;color:#08783f;font-size:11px;font-weight:800}.hidden{display:none!important}.footer-note{font-size:11px;color:var(--muted);text-align:center;padding:12px}
     .admin-section{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
     .section-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:13px;font-weight:800}
+    .session-archive-head{display:flex;align-items:center;gap:10px;margin-top:16px;margin-bottom:8px;padding-top:14px;border-top:1px solid var(--line)}
+    .session-card{border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:8px;background:#fff}
+    .session-card-top{display:flex;align-items:flex-start;gap:10px}.session-title{font-size:13px;font-weight:800}.session-status{font-size:9px;font-weight:800;padding:4px 7px;border-radius:999px;margin-left:6px}.session-status.active{background:#e9f8ef;color:#08783f}.session-status.closed{background:#eef1f4;color:#596274}
+    .session-meta{font-size:10px;color:var(--muted);margin-top:3px;line-height:1.45}.session-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:10px}.session-metric{background:#f8fafc;border:1px solid #edf0f3;border-radius:9px;padding:8px}.session-metric strong{display:block;font-size:16px}.session-metric span{font-size:9px;color:var(--muted);font-weight:800}
+    .session-actions{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:10px}.session-actions .ghost,.session-actions .danger{min-height:40px;padding:9px 11px}
+    @media(max-width:420px){.session-actions{grid-template-columns:1fr}.session-metrics{grid-template-columns:repeat(3,1fr)}}
     .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:10px 0 12px}
     .stat{border:1px solid var(--line);background:#f8fafc;border-radius:10px;padding:10px}
     .stat-num{font-size:18px;font-weight:800;letter-spacing:-.02em}.stat-label{font-size:10px;color:var(--muted);font-weight:700;margin-top:2px}
@@ -106,7 +112,12 @@
     <div style="height:10px"></div><div class="label">Notes (optional)</div><input id="sessionNotes" class="field" placeholder="Purpose / warehouse / batch" />
     <div style="height:10px"></div><button id="openSession" class="primary" style="width:100%">Open Sorting Session</button>
     <div id="adminMsg" class="status hidden"></div>
-    <div id="adminSessions" style="margin-top:12px"></div>
+    <div class="session-archive-head">
+      <div><b>Session records</b><div class="sub">Download complete scan logs and see users and scanner devices used.</div></div>
+      <div class="spacer"></div>
+      <button id="refreshAdminSessions" class="ghost" style="min-height:38px;padding:8px 10px">Refresh</button>
+    </div>
+    <div id="adminSessions"></div>
     <div class="admin-section">
       <div class="section-head"><span>Master device data</span><span id="masterBadge" class="pill">SUPABASE</span></div>
       <div class="sub">Authoritative source: <b>Crecom - Data(2).xlsx</b> • Sheet: <b>Serial No</b></div>
@@ -142,11 +153,50 @@ const SUPABASE_URL='https://xtodkzecgxqqxfyvksmm.supabase.co';
 const SUPABASE_KEY='sb_publishable_1vVhp31vXV__B_Wv7DFClg_pGAEz6dQ';
 const db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=id=>document.getElementById(id);
-let mode='find',stream=null,ocrWorker=null,reading=false,adminPin='',qrDetector=null,qrTimer=null,ocrTimer=null,scanBusy=false,scanCooldownUntil=0,lastAcceptedSerial='',lastAcceptedAt=0,recentScans=[],sessionScanCount=0,ocrCorrectionSerial='',ocrCorrectionCount=0,audioCtx=null,modalOpen=false,modalTimer=null;
+let mode='find',stream=null,ocrWorker=null,reading=false,adminPin='',qrDetector=null,qrTimer=null,ocrTimer=null,scanBusy=false,scanCooldownUntil=0,lastAcceptedSerial='',lastAcceptedAt=0,recentScans=[],sessionScanCount=0,ocrCorrectionSerial='',ocrCorrectionCount=0,audioCtx=null,modalOpen=false,modalTimer=null,scannerDeviceId='',scannerDeviceLabel='',scannerDeviceProfile={},adminSessionsCache=[];
 const operator=$('operator'); operator.value=localStorage.getItem('swap_operator')||''; operator.addEventListener('change',()=>localStorage.setItem('swap_operator',operator.value.trim()));
 
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{closeScanModal();document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');mode=b.dataset.mode;$('sortSessionCard').classList.toggle('hidden',mode!=='sort');$('resultCard').classList.remove('show');if(mode==='sort'){loadSessions();renderRecentScans();}});
 
+function getBrowserName(){
+  const ua=navigator.userAgent||'';
+  if(/Edg\//.test(ua))return 'Edge';
+  if(/Chrome\//.test(ua)&&!/Edg\//.test(ua))return 'Chrome';
+  if(/Firefox\//.test(ua))return 'Firefox';
+  if(/Safari\//.test(ua)&&!/Chrome\//.test(ua))return 'Safari';
+  return 'Browser';
+}
+async function ensureScannerDeviceProfile(){
+  if(scannerDeviceId&&scannerDeviceLabel)return;
+  scannerDeviceId=localStorage.getItem('swap_scanner_device_id')||'';
+  if(!scannerDeviceId){
+    scannerDeviceId=(crypto.randomUUID?crypto.randomUUID():'DEV-'+Date.now()+'-'+Math.random().toString(36).slice(2,10));
+    localStorage.setItem('swap_scanner_device_id',scannerDeviceId);
+  }
+  let platform=navigator.platform||'',model='',platformVersion='',architecture='';
+  try{
+    if(navigator.userAgentData?.getHighEntropyValues){
+      const h=await navigator.userAgentData.getHighEntropyValues(['platform','platformVersion','model','architecture','mobile']);
+      platform=h.platform||platform;platformVersion=h.platformVersion||'';model=h.model||'';architecture=h.architecture||'';
+    }
+  }catch(e){}
+  const browser=getBrowserName();
+  const mobile=navigator.userAgentData?.mobile??/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent||'');
+  scannerDeviceLabel=[model||platform||(mobile?'Mobile device':'Desktop device'),browser].filter(Boolean).join(' • ');
+  scannerDeviceProfile={
+    device_id:scannerDeviceId,
+    label:scannerDeviceLabel,
+    model:model||'',
+    platform:platform||'',
+    platform_version:platformVersion||'',
+    architecture:architecture||'',
+    browser,
+    mobile:!!mobile,
+    screen:(window.screen?.width||0)+'x'+(window.screen?.height||0),
+    viewport:window.innerWidth+'x'+window.innerHeight,
+    user_agent:navigator.userAgent||''
+  };
+}
 function setStatus(msg,type=''){const s=$('scanStatus');s.textContent=msg;s.className='status'+(type?' '+type:'');}
 function cleanCandidate(s){return (s||'').toUpperCase().replace(/[\s\-_:]/g,'').replace(/[^A-Z0-9]/g,'');}
 function extractSerial(text){
@@ -411,10 +461,15 @@ async function handleDetected(raw,source='MANUAL',force=false){
       return;
     }
 
-    const {data,error}=await db.rpc('swap_scan_device',{
+    await ensureScannerDeviceProfile();
+    const {data,error}=await db.rpc('swap_scan_device_v2',{
       p_session_id:sessionId,
       p_value:resolved.serial_number,
-      p_scanned_by:name
+      p_scanned_by:name,
+      p_scanner_device_id:scannerDeviceId,
+      p_scanner_device_label:scannerDeviceLabel,
+      p_scanner_device_info:scannerDeviceProfile,
+      p_scan_source:source
     });
     if(error)throw error;
 
@@ -456,9 +511,116 @@ function renderRecentScans(){
 function renderLookup(r){const card=$('resultCard');card.classList.add('show');if(!r||!r.found){card.innerHTML='<b>Device not found</b><div class="status warn">Serial '+esc(r?.serial_number||'')+' is not yet in the master table.</div>';setStatus('Serial read successfully, but no master record was found.','warn');return;}const loc=r.lookup_warehouse||r.warehouse||'Location not recorded';card.innerHTML='<div style="display:flex;align-items:center;gap:8px"><div class="eyebrow">Device location</div><div class="spacer"></div><span class="pill">MATCHED</span></div><div class="locationHero">'+esc(loc)+'</div>'+kv('Serial number',r.serial_number)+kv('Item code',r.item_code||'—')+kv('Status',r.device_status||'—')+kv('Company',r.company||'—');setStatus('Device located successfully.','ok');}
 function renderScan(r){const card=$('resultCard');card.classList.add('show');if(r.status==='duplicate'){card.innerHTML=`<b>Already scanned</b><div class="status bad">${r.serial_number} was already scanned in this session by <b>${esc(r.scanned_by||'another user')}</b>.</div>`;setStatus('Duplicate blocked.','bad');return;}card.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><b>Scan recorded</b><span class="pill">${r.matched_device?'MATCHED':'UNKNOWN'}</span></div>${kv('Serial number',r.serial_number)}${kv('Warehouse / Location',r.warehouse||'—')}${kv('Scanned by',r.scanned_by||'—')}${kv('Recorded',new Date(r.scanned_at).toLocaleString())}`;setStatus('Device recorded • ready for next device.','ok');}
 function kv(k,v){return `<div class="kv"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`}function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-async function loadSessions(selectId){const {data,error}=await db.rpc('swap_active_sessions');if(error){$('sessionSelect').innerHTML='<option>Unable to load sessions</option>';return;}const rows=data||[],s=$('sessionSelect'),previous=selectId||s.value;s.innerHTML=rows.length?rows.map(x=>`<option value="${x.id}">${esc(x.session_name)} • ${x.scan_count} scans</option>`).join(''):'<option value="">No active session</option>';if(previous&&rows.some(x=>x.id===previous))s.value=previous;const active=rows.find(x=>x.id===s.value)||rows[0];sessionScanCount=Number(active?.scan_count||0);$('sortCount').textContent=sessionScanCount.toLocaleString();$('sessionMeta').innerHTML=rows.length?'<span class="scan-ready">Continuous scan ready</span> • '+rows.length+' active session'+(rows.length===1?'':'s'):'Ask an administrator to open a sorting session.';renderAdminSessions(rows);}
+async function loadSessions(selectId){const {data,error}=await db.rpc('swap_active_sessions');if(error){$('sessionSelect').innerHTML='<option>Unable to load sessions</option>';return;}const rows=data||[],s=$('sessionSelect'),previous=selectId||s.value;s.innerHTML=rows.length?rows.map(x=>`<option value="${x.id}">${esc(x.session_name)} • ${x.scan_count} scans</option>`).join(''):'<option value="">No active session</option>';if(previous&&rows.some(x=>x.id===previous))s.value=previous;const active=rows.find(x=>x.id===s.value)||rows[0];sessionScanCount=Number(active?.scan_count||0);$('sortCount').textContent=sessionScanCount.toLocaleString();$('sessionMeta').innerHTML=rows.length?'<span class="scan-ready">Continuous scan ready</span> • '+rows.length+' active session'+(rows.length===1?'':'s'):'Ask an administrator to open a sorting session.';}
 
 
+function safeFileName(v){return String(v||'session').replace(/[^a-z0-9-_]+/gi,'_').replace(/^_+|_+$/g,'').slice(0,80)||'session';}
+async function loadAdminSessions(){
+  if(!adminPin)return;
+  const box=$('adminSessions');
+  box.innerHTML='<div class="sub">Loading session records…</div>';
+  const {data,error}=await db.rpc('swap_admin_sessions',{p_pin:adminPin});
+  if(error){box.innerHTML='<div class="status bad">'+esc(error.message)+'</div>';return;}
+  adminSessionsCache=data||[];
+  renderAdminSessions(adminSessionsCache);
+}
+function renderAdminSessions(data){
+  const box=$('adminSessions');
+  if(!data?.length){box.innerHTML='<div class="sub">No sorting sessions have been created yet.</div>';return;}
+  box.innerHTML=data.map(x=>{
+    const status=String(x.status||'').toLowerCase();
+    const opened=x.opened_at?new Date(x.opened_at).toLocaleString():'—';
+    const last=x.last_scan?new Date(x.last_scan).toLocaleString():'No scans yet';
+    return '<div class="session-card">'+
+      '<div class="session-card-top"><div><div class="session-title">'+esc(x.session_name)+' <span class="session-status '+esc(status)+'">'+esc(String(x.status||'').toUpperCase())+'</span></div>'+
+      '<div class="session-meta">Opened by '+esc(x.opened_by||'—')+' • '+esc(opened)+'<br>Last scan: '+esc(last)+'</div></div></div>'+
+      '<div class="session-metrics">'+
+        '<div class="session-metric"><strong>'+Number(x.scan_count||0).toLocaleString()+'</strong><span>SCANS</span></div>'+
+        '<div class="session-metric"><strong>'+Number(x.user_count||0).toLocaleString()+'</strong><span>USERS</span></div>'+
+        '<div class="session-metric"><strong>'+Number(x.device_count||0).toLocaleString()+'</strong><span>SCANNER DEVICES</span></div>'+
+      '</div>'+
+      '<div class="session-actions">'+
+        '<button class="secondary" onclick="downloadSession(\''+x.id+'\')">Download Session Excel</button>'+
+        (status==='active'?'<button class="danger" onclick="closeSession(\''+x.id+'\')">Close</button>':'<button class="ghost" disabled>Closed</button>')+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+async function downloadSession(id){
+  const meta=adminSessionsCache.find(x=>x.id===id);
+  showAdmin('Preparing session download…','');
+  const {data,error}=await db.rpc('swap_session_export',{p_session_id:id,p_pin:adminPin});
+  if(error){showAdmin(error.message,'bad');return;}
+  const rows=data||[];
+  const scanRows=rows.map((r,i)=>{
+    const info=r.scanner_device_info||{};
+    return {
+      'No.':i+1,
+      'Serial Number':r.serial_number||'',
+      'Item Code':r.item_code||'',
+      'Device Status':r.device_status||'',
+      'Warehouse / Allocation':r.warehouse||'',
+      'Company':r.company||'',
+      'Matched Master':r.matched_device?'Yes':'No',
+      'Scanned By':r.scanned_by||'',
+      'Scanned At':r.scanned_at?new Date(r.scanned_at).toLocaleString():'',
+      'Scan Method':r.scan_source||'',
+      'Scanner Device ID':r.scanner_device_id||'',
+      'Scanner Device':r.scanner_device_label||'',
+      'Platform':info.platform||'',
+      'Model':info.model||'',
+      'Browser':info.browser||'',
+      'Screen':info.screen||'',
+      'Viewport':info.viewport||''
+    };
+  });
+  const devices=new Map();
+  for(const r of rows){
+    const key=r.scanner_device_id||'Unknown';
+    const info=r.scanner_device_info||{};
+    if(!devices.has(key))devices.set(key,{id:key,label:r.scanner_device_label||'',platform:info.platform||'',model:info.model||'',browser:info.browser||'',screen:info.screen||'',scans:0,users:new Set(),first:null,last:null});
+    const d=devices.get(key);d.scans++;if(r.scanned_by)d.users.add(r.scanned_by);
+    const t=r.scanned_at?new Date(r.scanned_at):null;
+    if(t&&(!d.first||t<d.first))d.first=t;if(t&&(!d.last||t>d.last))d.last=t;
+  }
+  const deviceRows=[...devices.values()].map((d,i)=>({
+    'No.':i+1,
+    'Scanner Device ID':d.id,
+    'Device':d.label,
+    'Platform':d.platform,
+    'Model':d.model,
+    'Browser':d.browser,
+    'Screen':d.screen,
+    'Scans':d.scans,
+    'Users':Array.from(d.users).join(', '),
+    'First Scan':d.first?d.first.toLocaleString():'',
+    'Last Scan':d.last?d.last.toLocaleString():''
+  }));
+  const summary=[
+    ['CRECCOM SWAP Sorting Session'],
+    ['Session',meta?.session_name||rows[0]?.session_name||''],
+    ['Status',meta?.status||rows[0]?.session_status||''],
+    ['Opened By',meta?.opened_by||rows[0]?.opened_by||''],
+    ['Opened At',meta?.opened_at?new Date(meta.opened_at).toLocaleString():(rows[0]?.opened_at?new Date(rows[0].opened_at).toLocaleString():'')],
+    ['Closed By',meta?.closed_by||rows[0]?.closed_by||''],
+    ['Closed At',meta?.closed_at?new Date(meta.closed_at).toLocaleString():(rows[0]?.closed_at?new Date(rows[0].closed_at).toLocaleString():'')],
+    ['Total Scans',meta?.scan_count??rows.length],
+    ['Users',meta?.user_count??new Set(rows.map(r=>r.scanned_by).filter(Boolean)).size],
+    ['Scanner Devices Used',meta?.device_count??devices.size]
+  ];
+  const wb=XLSX.utils.book_new();
+  const wsSummary=XLSX.utils.aoa_to_sheet(summary);wsSummary['!cols']=[{wch:22},{wch:42}];
+  XLSX.utils.book_append_sheet(wb,wsSummary,'Session Summary');
+  const wsScans=XLSX.utils.json_to_sheet(scanRows.length?scanRows:[{'Serial Number':'No scans recorded'}]);
+  wsScans['!cols']=[{wch:7},{wch:22},{wch:16},{wch:15},{wch:38},{wch:22},{wch:14},{wch:22},{wch:22},{wch:14},{wch:38},{wch:30},{wch:16},{wch:18},{wch:14},{wch:14},{wch:14}];
+  XLSX.utils.book_append_sheet(wb,wsScans,'Scanned Devices');
+  const wsDevices=XLSX.utils.json_to_sheet(deviceRows.length?deviceRows:[{'Scanner Device ID':'No scanner device data recorded'}]);
+  wsDevices['!cols']=[{wch:7},{wch:38},{wch:30},{wch:18},{wch:20},{wch:14},{wch:14},{wch:10},{wch:28},{wch:22},{wch:22}];
+  XLSX.utils.book_append_sheet(wb,wsDevices,'Scanner Devices Used');
+  const filename='SWAP_'+safeFileName(meta?.session_name||'Sorting_Session')+'.xlsx';
+  XLSX.writeFile(wb,filename);
+  showAdmin('Session downloaded successfully.','ok');
+}
 async function loadMasterStats(){
   const box=$('masterStats'); if(!box)return;
   const {data,error}=await db.rpc('swap_master_stats');
@@ -556,11 +718,10 @@ async function importMasterData(){
 
 $('cameraBtn').onclick=startCamera;$('readBtn').onclick=()=>readFrame(true);$('sessionSelect').addEventListener('change',()=>loadSessions($('sessionSelect').value));$('submitManual').onclick=()=>handleValue($('manual').value.trim());$('manual').addEventListener('keydown',e=>{if(e.key==='Enter')$('submitManual').click()});
 
-$('settingsBtn').onclick=()=>{const pin=prompt('Administrator code');if(pin===null)return;adminPin=pin;$('adminPanel').classList.remove('hidden');$('adminName').value=operator.value.trim();loadSessions();loadMasterStats();$('adminPanel').scrollIntoView({behavior:'smooth'});};$('closeAdmin').onclick=()=>$('adminPanel').classList.add('hidden');$('downloadTemplate').onclick=downloadImportTemplate;$('importMaster').onclick=importMasterData;
-$('openSession').onclick=async()=>{const n=$('sessionName').value.trim(),a=$('adminName').value.trim(),notes=$('sessionNotes').value.trim();if(!n||!a){showAdmin('Enter session and administrator names.','warn');return;}const {error}=await db.rpc('swap_open_session',{p_session_name:n,p_opened_by:a,p_notes:notes||null,p_pin:adminPin});if(error){showAdmin(error.message,'bad');return;}showAdmin('Sorting session opened.','ok');$('sessionName').value='';$('sessionNotes').value='';await loadSessions();};
-async function closeSession(id){const a=$('adminName').value.trim()||operator.value.trim();if(!a){showAdmin('Enter administrator name first.','warn');return;}if(!confirm('Close this sorting session?'))return;const {error}=await db.rpc('swap_close_session',{p_session_id:id,p_closed_by:a,p_pin:adminPin});if(error){showAdmin(error.message,'bad');return;}showAdmin('Session closed.','ok');await loadSessions();}
-function renderAdminSessions(data){const box=$('adminSessions');if(!data?.length){box.innerHTML='<div class="sub">No active sessions.</div>';return;}box.innerHTML=data.map(x=>`<div class="session"><div><b>${esc(x.session_name)}</b><br><small>${x.scan_count} scans • opened by ${esc(x.opened_by)}</small></div><div class="spacer"></div><button class="danger" onclick="closeSession('${x.id}')">Close</button></div>`).join('');}
+$('settingsBtn').onclick=()=>{const pin=prompt('Administrator code');if(pin===null)return;adminPin=pin;$('adminPanel').classList.remove('hidden');$('adminName').value=operator.value.trim();loadSessions();loadAdminSessions();loadMasterStats();$('adminPanel').scrollIntoView({behavior:'smooth'});};$('closeAdmin').onclick=()=>$('adminPanel').classList.add('hidden');$('refreshAdminSessions').onclick=loadAdminSessions;$('downloadTemplate').onclick=downloadImportTemplate;$('importMaster').onclick=importMasterData;
+$('openSession').onclick=async()=>{const n=$('sessionName').value.trim(),a=$('adminName').value.trim(),notes=$('sessionNotes').value.trim();if(!n||!a){showAdmin('Enter session and administrator names.','warn');return;}const {error}=await db.rpc('swap_open_session',{p_session_name:n,p_opened_by:a,p_notes:notes||null,p_pin:adminPin});if(error){showAdmin(error.message,'bad');return;}showAdmin('Sorting session opened.','ok');$('sessionName').value='';$('sessionNotes').value='';await loadSessions();await loadAdminSessions();};
+async function closeSession(id){const a=$('adminName').value.trim()||operator.value.trim();if(!a){showAdmin('Enter administrator name first.','warn');return;}if(!confirm('Close this sorting session?'))return;const {error}=await db.rpc('swap_close_session',{p_session_id:id,p_closed_by:a,p_pin:adminPin});if(error){showAdmin(error.message,'bad');return;}showAdmin('Session closed.','ok');await loadSessions();await loadAdminSessions();}
 function showAdmin(msg,type){const e=$('adminMsg');e.textContent=msg;e.className='status '+type;}
-loadSessions();
+ensureScannerDeviceProfile();loadSessions();
 </script>
 </body></html>
