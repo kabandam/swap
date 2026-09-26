@@ -1,16 +1,30 @@
-const CACHE='creccom-swap-shell-v1';
+const CACHE='creccom-swap-shell-v2';
 const CORE=[
   '/',
   '/index.html',
   '/assets/creccom-rounded-logo.png'
 ];
+const EXTERNAL=[
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
+  'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
+  'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js',
+  'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'
+];
+
+async function warmExternal(cache,url){
+  try{
+    const res=await fetch(url,{mode:'cors',cache:'reload'});
+    if(res && res.ok)await cache.put(url,res.clone());
+  }catch(e){}
+}
 
 self.addEventListener('install',event=>{
-  event.waitUntil(
-    caches.open(CACHE)
-      .then(cache=>cache.addAll(CORE))
-      .then(()=>self.skipWaiting())
-  );
+  event.waitUntil((async()=>{
+    const cache=await caches.open(CACHE);
+    await cache.addAll(CORE);
+    await Promise.allSettled(EXTERNAL.map(url=>warmExternal(cache,url)));
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate',event=>{
@@ -26,9 +40,7 @@ self.addEventListener('fetch',event=>{
   if(req.method!=='GET')return;
 
   const url=new URL(req.url);
-  if(url.hostname.endsWith('.supabase.co')){
-    return;
-  }
+  if(url.hostname.endsWith('.supabase.co'))return;
 
   if(req.mode==='navigate'){
     event.respondWith(
@@ -47,7 +59,7 @@ self.addEventListener('fetch',event=>{
     caches.match(req).then(cached=>{
       if(cached)return cached;
       return fetch(req).then(res=>{
-        if(res && (res.ok || res.type==='opaque')){
+        if(res && (res.ok||res.type==='opaque')){
           const copy=res.clone();
           caches.open(CACHE).then(cache=>cache.put(req,copy)).catch(()=>{});
         }
