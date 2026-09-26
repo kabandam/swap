@@ -26,7 +26,7 @@
     .camera{position:relative;overflow:hidden;border-radius:14px;background:#101418;aspect-ratio:4/3}.camera video{width:100%;height:100%;object-fit:cover}.guide{position:absolute;left:6%;right:6%;top:37%;height:26%;border:2px solid #fff;border-radius:12px;box-shadow:0 0 0 999px #0007}.guide:before{content:'Aim the QR code or S/N line inside this box';position:absolute;top:-32px;left:0;right:0;text-align:center;color:#fff;font-size:12px;font-weight:700;text-shadow:0 1px 2px #000}.scanline{position:absolute;left:8%;right:8%;top:49%;height:2px;background:#53e0ff;box-shadow:0 0 12px #53e0ff}.cam-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.status{margin-top:10px;border-radius:10px;padding:10px 12px;font-size:13px;background:#f3f4f6}.status.ok{background:#e9f8ef;color:#08783f}.status.warn{background:#fff6df;color:#8a5b00}.status.bad{background:#fdeceb;color:#a6251d}
     .result{display:none}.result.show{display:block}.kv{display:grid;grid-template-columns:120px 1fr;gap:8px 12px;padding:7px 0;border-bottom:1px solid #edf0f3}.kv:last-child{border-bottom:0}.k{font-size:12px;color:var(--muted);font-weight:700}.v{font-size:13px;font-weight:600;word-break:break-word}
     .session{display:flex;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid #edf0f3}.session:last-child{border-bottom:0}.session b{font-size:13px}.session small{color:var(--muted)}
-    .pill{display:inline-flex;padding:5px 8px;border-radius:999px;background:#e9f8ef;color:#08783f;font-size:11px;font-weight:800}.hidden{display:none!important}.footer-note{font-size:11px;color:var(--muted);text-align:center;padding:12px}
+    .pill{display:inline-flex;padding:5px 8px;border-radius:999px;background:#e9f8ef;color:#08783f;font-size:11px;font-weight:800}.pill.commcare{background:#fff3e6;color:#a45300}.pill.unallocated{background:#fff0ef;color:#a6251d}.allocation-note{margin-top:10px;padding:10px 12px;border-radius:10px;background:#fff8ea;border:1px solid #f5dfaf;color:#79520a;font-size:12px;line-height:1.45}.hidden{display:none!important}.footer-note{font-size:11px;color:var(--muted);text-align:center;padding:12px}
     .admin-section{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
     .section-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:13px;font-weight:800}
     .session-archive-head{display:flex;align-items:center;gap:10px;margin-top:16px;margin-bottom:8px;padding-top:14px;border-top:1px solid var(--line)}
@@ -66,7 +66,7 @@
 </head>
 <body>
 <div class="app">
-<header><img src="assets/creccom-rounded-logo.png" alt="CRECCOM logo" class="brand-logo" /><div><h1>CRECCOM SWAP Scanner</h1><div class="sub">Warehouse asset scanner • Serial-first recognition</div></div><div class="spacer"></div><button id="settingsBtn" class="ghost" style="padding:9px 11px">Admin</button></header>
+<header><img src="assets/creccom-rounded-logo.png" alt="CRECCOM logo" class="brand-logo" /><div><h1>CRECCOM SWAP Scanner</h1><div class="sub">Warehouse asset scanner • Master + CommCare allocation</div></div><div class="spacer"></div><button id="settingsBtn" class="ghost" style="padding:9px 11px">Admin</button></header>
 <main>
   <div class="tabs"><button class="tab active" data-mode="find">Find Device</button><button class="tab" data-mode="sort">Device Sorting</button></div>
 
@@ -121,7 +121,7 @@
     <div id="adminSessions"></div>
     <div class="admin-section">
       <div class="section-head"><img src="assets/creccom-rounded-logo.png" alt="" class="info-logo" /><span>Master device data</span><span id="masterBadge" class="pill">SUPABASE</span></div>
-      <div class="sub">Authoritative source: <b>Crecom - Data(2).xlsx</b> • Sheet: <b>Serial No</b></div>
+      <div class="sub">Primary allocation: <b>CRECCOM master</b> • Fallback allocation: <b>CommCare Stock Take</b>. CommCare is used only when the master has no usable location.</div>
       <div id="masterStats" class="stats">
         <div class="stat"><div class="stat-num">—</div><div class="stat-label">DEVICES</div></div>
         <div class="stat"><div class="stat-num">—</div><div class="stat-label">WAREHOUSES</div></div>
@@ -383,31 +383,59 @@ function openModal(html,autoCloseMs=0){
   modalOpen=true;
   if(autoCloseMs>0) modalTimer=setTimeout(closeScanModal,autoCloseMs);
 }
+function allocationMeta(r){
+  const auto=!!(r?.auto_allocated||r?.allocation_source==='commcare_stock_take'||r?.location_source==='commcare_auto');
+  const unallocated=!!(r?.allocation_status==='unallocated');
+  return {
+    auto,
+    unallocated,
+    label:auto?'AUTO ALLOCATED – COMMCARE':unallocated?'UNALLOCATED':'MASTER ALLOCATION',
+    pill:auto?'pill commcare':unallocated?'pill unallocated':'pill',
+    source:auto?'CommCare Stock Take':unallocated?'No confirmed allocation':'CRECCOM Master'
+  };
+}
 function showFindDeviceModal(r){
   const loc=r.lookup_warehouse||r.warehouse||'Location not recorded';
+  const a=allocationMeta(r);
+  const extra=a.auto
+    ? '<div class="allocation-note"><b>Auto allocation</b><br>This location was recovered from the recent CommCare stock take using the exact tablet serial number.</div>'
+    : '';
   openModal(
     '<div class="scan-modal-top">'+
-      '<div class="modal-icon ok">✓</div>'+
-      '<div><div class="modal-title" id="scanModalTitle">Device found</div><div class="modal-sub">Allocation details from the CRECCOM master data.</div></div>'+
+      '<div class="modal-icon '+(a.unallocated?'warn':'ok')+'">'+(a.unallocated?'!':'✓')+'</div>'+
+      '<div><div class="modal-title" id="scanModalTitle">'+(a.unallocated?'Allocation not found':'Device found')+'</div><div class="modal-sub">'+esc(a.source)+'</div></div>'+
     '</div>'+
     '<div class="modal-location"><div class="eyebrow">DEVICE ALLOCATION / LOCATION</div><strong>'+esc(loc)+'</strong></div>'+
+    '<div style="margin:8px 0"><span class="'+a.pill+'">'+esc(a.label)+'</span></div>'+
     '<div class="modal-grid">'+
       '<div class="k">Serial number</div><div class="v">'+esc(r.serial_number||'—')+'</div>'+
+      '<div class="k">Allocation source</div><div class="v">'+esc(a.source)+'</div>'+
+      (a.auto?'<div class="k">CommCare EMIS</div><div class="v">'+esc(r.commcare_emis||'—')+'</div>':'')+
+      (a.auto?'<div class="k">CommCare school</div><div class="v">'+esc(r.commcare_school||'—')+'</div>':'')+
+      (r.district?'<div class="k">District</div><div class="v">'+esc(r.district)+'</div>':'')+
+      (r.zone?'<div class="k">Zone</div><div class="v">'+esc(r.zone)+'</div>':'')+
+      (r.cohort?'<div class="k">Cohort</div><div class="v">'+esc(r.cohort)+'</div>':'')+
       '<div class="k">Item code</div><div class="v">'+esc(r.item_code||'—')+'</div>'+
       '<div class="k">Status</div><div class="v">'+esc(r.device_status||'—')+'</div>'+
       '<div class="k">Company</div><div class="v">'+esc(r.company||'—')+'</div>'+
-    '</div>'+
+    '</div>'+extra+
     '<button class="primary modal-action" onclick="closeScanModal()">Close & scan another</button>'
   );
 }
 function showSortSuccessModal(r){
+  const a=allocationMeta(r);
+  const loc=r.warehouse||r.commcare_school||'Location not recorded';
   openModal(
     '<div class="sort-success">'+
-      '<div class="modal-icon ok">✓</div>'+
-      '<div class="modal-title" id="scanModalTitle">Device recorded</div>'+
-      '<div class="modal-sub"><b>'+esc(r.serial_number||'')+'</b> has been added to this sorting session.<br>Scan another device.</div>'+
+      '<div class="modal-icon '+(a.unallocated?'warn':'ok')+'">'+(a.unallocated?'!':'✓')+'</div>'+
+      '<div class="modal-title" id="scanModalTitle">'+(a.auto?'Device auto allocated':a.unallocated?'Device recorded – review allocation':'Device recorded')+'</div>'+
+      '<div class="modal-sub"><b>'+esc(r.serial_number||'')+'</b> has been added to this sorting session.</div>'+
+      '<div style="margin:12px 0 6px"><span class="'+a.pill+'">'+esc(a.label)+'</span></div>'+
+      '<div class="modal-location"><div class="eyebrow">WAREHOUSE / LOCATION</div><strong>'+esc(loc)+'</strong></div>'+
+      (a.auto?'<div class="allocation-note">Source: <b>CommCare Stock Take</b> • EMIS '+esc(r.commcare_emis||'—')+' • '+esc(r.commcare_school||'—')+'</div>':'')+
+      '<div class="modal-sub" style="margin-top:12px">Ready for the next device.</div>'+
     '</div>',
-    950
+    a.auto?1650:1100
   );
 }
 function showDuplicateModal(r){
@@ -457,7 +485,7 @@ async function handleDetected(raw,source='MANUAL',force=false){
     if(!sessionId){setStatus('Select an active sorting session first.','warn');scanCooldownUntil=Date.now()+700;return;}
 
     if(!resolved.found){
-      setStatus('Not in master data: '+quick+' • not recorded.','warn');
+      setStatus('Not found in master or CommCare: '+quick+' • not recorded.','warn');
       scanCooldownUntil=Date.now()+650;
       return;
     }
@@ -484,7 +512,7 @@ async function handleDetected(raw,source='MANUAL',force=false){
       lastAcceptedSerial=data.serial_number;lastAcceptedAt=Date.now();
       sessionScanCount++;
       $('sortCount').textContent=sessionScanCount.toLocaleString();
-      addRecentScan({serial:data.serial_number,warehouse:data.warehouse||resolved.lookup_warehouse||resolved.warehouse||'—',source});
+      addRecentScan({serial:data.serial_number,warehouse:data.warehouse||resolved.lookup_warehouse||resolved.warehouse||'—',source:data.auto_allocated?'COMMCARE':(data.allocation_status==='unallocated'?'REVIEW':source)});
       beep('ok');
       showSortSuccessModal(data);
       setStatus('Recorded '+data.serial_number+' • ready for next device.','ok');
@@ -509,8 +537,45 @@ function renderRecentScans(){
   if(!recentScans.length){box.innerHTML='<div class="recent-row"><div><b>Ready to scan</b><small>Start the camera and move from device to device.</small></div><span class="scan-source">LIVE</span></div>';return;}
   box.innerHTML=recentScans.map(r=>'<div class="recent-row"><div><b>'+esc(r.serial)+'</b><small>'+esc(r.warehouse||'—')+' • '+r.time.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"})+'</small></div><span class="scan-source">'+esc(r.source)+'</span></div>').join('');
 }
-function renderLookup(r){const card=$('resultCard');card.classList.add('show');if(!r||!r.found){card.innerHTML='<b>Device not found</b><div class="status warn">Serial '+esc(r?.serial_number||'')+' is not yet in the master table.</div>';setStatus('Serial read successfully, but no master record was found.','warn');return;}const loc=r.lookup_warehouse||r.warehouse||'Location not recorded';card.innerHTML='<div style="display:flex;align-items:center;gap:8px"><div class="eyebrow">Device location</div><div class="spacer"></div><span class="pill">MATCHED</span></div><div class="locationHero">'+esc(loc)+'</div>'+kv('Serial number',r.serial_number)+kv('Item code',r.item_code||'—')+kv('Status',r.device_status||'—')+kv('Company',r.company||'—');setStatus('Device located successfully.','ok');}
-function renderScan(r){const card=$('resultCard');card.classList.add('show');if(r.status==='duplicate'){card.innerHTML=`<b>Already scanned</b><div class="status bad">${r.serial_number} was already scanned in this session by <b>${esc(r.scanned_by||'another user')}</b>.</div>`;setStatus('Duplicate blocked.','bad');return;}card.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><b>Scan recorded</b><span class="pill">${r.matched_device?'MATCHED':'UNKNOWN'}</span></div>${kv('Serial number',r.serial_number)}${kv('Warehouse / Location',r.warehouse||'—')}${kv('Scanned by',r.scanned_by||'—')}${kv('Recorded',new Date(r.scanned_at).toLocaleString())}`;setStatus('Device recorded • ready for next device.','ok');}
+function renderLookup(r){
+  const card=$('resultCard');card.classList.add('show');
+  if(!r||!r.found){
+    card.innerHTML='<b>Device not found</b><div class="status warn">Serial '+esc(r?.serial_number||'')+' was not found in the CRECCOM master or the CommCare stock take.</div>';
+    setStatus('Serial read successfully, but no allocation source matched it.','warn');return;
+  }
+  const loc=r.lookup_warehouse||r.warehouse||'Location not recorded';
+  const a=allocationMeta(r);
+  card.innerHTML='<div style="display:flex;align-items:center;gap:8px"><div class="eyebrow">Device location</div><div class="spacer"></div><span class="'+a.pill+'">'+esc(a.label)+'</span></div>'+
+    '<div class="locationHero">'+esc(loc)+'</div>'+
+    kv('Serial number',r.serial_number)+
+    kv('Allocation source',a.source)+
+    (a.auto?kv('CommCare EMIS',r.commcare_emis||'—'):'')+
+    (a.auto?kv('CommCare school',r.commcare_school||'—'):'')+
+    (r.district?kv('District',r.district):'')+
+    (r.zone?kv('Zone',r.zone):'')+
+    (r.cohort?kv('Cohort',r.cohort):'')+
+    kv('Item code',r.item_code||'—')+
+    kv('Status',r.device_status||'—')+
+    kv('Company',r.company||'—');
+  setStatus(a.auto?'Device located using CommCare stock-take fallback.':'Device located successfully.','ok');
+}
+function renderScan(r){
+  const card=$('resultCard');card.classList.add('show');
+  if(r.status==='duplicate'){
+    card.innerHTML=`<b>Already scanned</b><div class="status bad">${esc(r.serial_number)} was already scanned in this session by <b>${esc(r.scanned_by||'another user')}</b>.</div>`;
+    setStatus('Duplicate blocked.','bad');return;
+  }
+  const a=allocationMeta(r);
+  card.innerHTML='<div style="display:flex;align-items:center;gap:8px"><b>Scan recorded</b><div class="spacer"></div><span class="'+a.pill+'">'+esc(a.label)+'</span></div>'+
+    kv('Serial number',r.serial_number)+
+    kv('Warehouse / Location',r.warehouse||'—')+
+    kv('Allocation source',a.source)+
+    (a.auto?kv('CommCare EMIS',r.commcare_emis||'—'):'')+
+    (a.auto?kv('CommCare school',r.commcare_school||'—'):'')+
+    kv('Scanned by',r.scanned_by||'—')+
+    kv('Recorded',new Date(r.scanned_at).toLocaleString());
+  setStatus(a.auto?'Device recorded with CommCare auto allocation • ready for next device.':'Device recorded • ready for next device.','ok');
+}
 function kv(k,v){return `<div class="kv"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`}function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 async function loadSessions(selectId){const {data,error}=await db.rpc('swap_active_sessions');if(error){$('sessionSelect').innerHTML='<option>Unable to load sessions</option>';return;}const rows=data||[],s=$('sessionSelect'),previous=selectId||s.value;s.innerHTML=rows.length?rows.map(x=>`<option value="${x.id}">${esc(x.session_name)} • ${x.scan_count} scans</option>`).join(''):'<option value="">No active session</option>';if(previous&&rows.some(x=>x.id===previous))s.value=previous;const active=rows.find(x=>x.id===s.value)||rows[0];sessionScanCount=Number(active?.scan_count||0);$('sortCount').textContent=sessionScanCount.toLocaleString();$('sessionMeta').innerHTML=rows.length?'<span class="scan-ready">Continuous scan ready</span> • '+rows.length+' active session'+(rows.length===1?'':'s'):'Ask an administrator to open a sorting session.';}
 
@@ -562,7 +627,11 @@ async function downloadSession(id){
       'Device Status':r.device_status||'',
       'Warehouse / Allocation':r.warehouse||'',
       'Company':r.company||'',
-      'Matched Master':r.matched_device?'Yes':'No',
+      'Matched Device':r.matched_device?'Yes':'No',
+      'Allocation Source':r.allocation_source||'',
+      'Allocation Status':r.allocation_status||'',
+      'CommCare EMIS':r.commcare_emis||'',
+      'CommCare School':r.commcare_school||'',
       'Scanned By':r.scanned_by||'',
       'Scanned At':r.scanned_at?new Date(r.scanned_at).toLocaleString():'',
       'Scan Method':r.scan_source||'',
