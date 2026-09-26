@@ -31,12 +31,12 @@
     .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:10px 0 12px}
     .stat{border:1px solid var(--line);background:#f8fafc;border-radius:10px;padding:10px}
     .stat-num{font-size:18px;font-weight:800;letter-spacing:-.02em}.stat-label{font-size:10px;color:var(--muted);font-weight:700;margin-top:2px}
-    .filebox{border:1px dashed #b8c5d9;background:#f8fbff;border-radius:12px;padding:12px}
+    .filebox{border:1px dashed #b8c5d9;background:#f8fbff;border-radius:12px;padding:12px}.import-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.template-note{display:flex;gap:8px;align-items:flex-start;margin:10px 0;padding:10px;border-radius:10px;background:#eef4ff;color:#315783;font-size:11px;line-height:1.45}
     .progress{height:8px;border-radius:999px;background:#e8edf4;overflow:hidden;margin-top:10px}.progress span{display:block;height:100%;width:0;background:var(--blue);transition:width .2s ease}
     .eyebrow{font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
     .locationHero{font-size:18px;font-weight:800;line-height:1.25;margin:5px 0 10px;letter-spacing:-.02em}
     button{min-height:44px}.field{min-height:44px}
-    @media(max-width:420px){.kv{grid-template-columns:105px 1fr}.cam-actions{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}}
+    @media(max-width:420px){.kv{grid-template-columns:105px 1fr}.cam-actions{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.import-actions{grid-template-columns:1fr}}
     @media(min-width:640px){main{padding:22px}.camera{aspect-ratio:16/10}.stats{grid-template-columns:repeat(4,1fr)}}
   </style>
 </head>
@@ -96,7 +96,11 @@
         <div class="label">Replace master data from CRECCOM Excel</div>
         <input id="masterFile" class="field" type="file" accept=".xlsx,.xls" />
         <div class="sub" style="margin:8px 0 10px">Expected columns: Sr, ID, Document Status, Item Code, Status, Warehouse, Company, Created By. For the 431k-row master, run this import from a desktop browser.</div>
-        <button id="importMaster" class="primary" style="width:100%">Import / Replace Master Data</button>
+        <div class="template-note"><b>Template</b><span>Download the approved Excel structure before preparing a new master file. Keep the headers unchanged and use one device per row.</span></div>
+        <div class="import-actions">
+          <button id="downloadTemplate" class="secondary">Download Import Template</button>
+          <button id="importMaster" class="primary">Import / Replace Master Data</button>
+        </div>
         <div class="progress"><span id="importBar"></span></div>
         <div id="importMsg" class="status hidden"></div>
       </div>
@@ -172,6 +176,37 @@ function setImportState(percent,msg,type){
   $('importBar').style.width=Math.max(0,Math.min(100,percent))+'%';
   const el=$('importMsg'); el.textContent=msg; el.className='status '+(type||''); 
 }
+
+function downloadImportTemplate(){
+  const headers=['Sr','ID','Document Status','Item Code','Status','Warehouse','Company','Created By'];
+  const example=[1,'EXAMPLE000001','0','TAB000000','Active','Example Warehouse - IMW','Imagine Malawi','user@creccommw.org'];
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet([headers,example]);
+  ws['!cols']=[
+    {wch:8},{wch:20},{wch:18},{wch:16},{wch:14},{wch:34},{wch:22},{wch:30}
+  ];
+  XLSX.utils.book_append_sheet(wb,ws,'Serial No');
+
+  const instructions=[
+    ['CRECCOM SWAP Master Data Import Template'],
+    [''],
+    ['Required worksheet','Serial No'],
+    ['Required columns','Sr | ID | Document Status | Item Code | Status | Warehouse | Company | Created By'],
+    ['ID','Required. Use the exact tablet/device serial or master ID. Each ID should be unique.'],
+    ['Warehouse','Required for location lookup. This value is displayed as the device location in SWAP.'],
+    ['Status','Use the source system status, e.g. Active or Consumed.'],
+    ['Document Status','Keep the source value.'],
+    ['Item Code','Keep the source item code, e.g. TAB000000.'],
+    ['Company','Keep the source company name.'],
+    ['Created By','Keep the source creator/email where available.'],
+    ['Important','Do not rename, remove, or reorder the required headers. One device per row. Delete the example row before importing your production file.']
+  ];
+  const ins=XLSX.utils.aoa_to_sheet(instructions);
+  ins['!cols']=[{wch:22},{wch:88}];
+  XLSX.utils.book_append_sheet(wb,ins,'Instructions');
+  XLSX.writeFile(wb,'CRECCOM_SWAP_Master_Import_Template.xlsx');
+}
+
 async function importMasterData(){
   const file=$('masterFile').files[0];
   if(!file){setImportState(0,'Choose Crecom - Data(2).xlsx first.','warn');return;}
@@ -223,7 +258,7 @@ async function importMasterData(){
 
 $('cameraBtn').onclick=startCamera;$('readBtn').onclick=()=>readFrame(true);$('submitManual').onclick=()=>handleValue($('manual').value.trim());$('manual').addEventListener('keydown',e=>{if(e.key==='Enter')$('submitManual').click()});
 
-$('settingsBtn').onclick=()=>{const pin=prompt('Administrator code');if(pin===null)return;adminPin=pin;$('adminPanel').classList.remove('hidden');$('adminName').value=operator.value.trim();loadSessions();loadMasterStats();$('adminPanel').scrollIntoView({behavior:'smooth'});};$('closeAdmin').onclick=()=>$('adminPanel').classList.add('hidden');$('importMaster').onclick=importMasterData;
+$('settingsBtn').onclick=()=>{const pin=prompt('Administrator code');if(pin===null)return;adminPin=pin;$('adminPanel').classList.remove('hidden');$('adminName').value=operator.value.trim();loadSessions();loadMasterStats();$('adminPanel').scrollIntoView({behavior:'smooth'});};$('closeAdmin').onclick=()=>$('adminPanel').classList.add('hidden');$('downloadTemplate').onclick=downloadImportTemplate;$('importMaster').onclick=importMasterData;
 $('openSession').onclick=async()=>{const n=$('sessionName').value.trim(),a=$('adminName').value.trim(),notes=$('sessionNotes').value.trim();if(!n||!a){showAdmin('Enter session and administrator names.','warn');return;}const {error}=await db.rpc('swap_open_session',{p_session_name:n,p_opened_by:a,p_notes:notes||null,p_pin:adminPin});if(error){showAdmin(error.message,'bad');return;}showAdmin('Sorting session opened.','ok');$('sessionName').value='';$('sessionNotes').value='';await loadSessions();};
 async function closeSession(id){const a=$('adminName').value.trim()||operator.value.trim();if(!a){showAdmin('Enter administrator name first.','warn');return;}if(!confirm('Close this sorting session?'))return;const {error}=await db.rpc('swap_close_session',{p_session_id:id,p_closed_by:a,p_pin:adminPin});if(error){showAdmin(error.message,'bad');return;}showAdmin('Session closed.','ok');await loadSessions();}
 function renderAdminSessions(data){const box=$('adminSessions');if(!data?.length){box.innerHTML='<div class="sub">No active sessions.</div>';return;}box.innerHTML=data.map(x=>`<div class="session"><div><b>${esc(x.session_name)}</b><br><small>${x.scan_count} scans • opened by ${esc(x.opened_by)}</small></div><div class="spacer"></div><button class="danger" onclick="closeSession('${x.id}')">Close</button></div>`).join('');}
