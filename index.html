@@ -49,7 +49,7 @@
     .sort-counter strong{font-size:28px;line-height:1;font-weight:800;letter-spacing:-.04em}.sort-counter span{font-size:10px;color:var(--muted);font-weight:800;margin-top:5px}
     .recent{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}.recent-head{width:100%;padding:9px 10px;background:#f8fafc;border:0;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:10px;color:var(--muted);font-weight:800;letter-spacing:.04em;min-height:38px;text-align:left}.recent-head .recent-toggle{font-size:10px;color:var(--blue);font-weight:800}.recent-body{border-top:1px solid var(--line)}.recent-body.collapsed{display:none}
     .recent-row{display:grid;grid-template-columns:1fr auto;gap:8px;padding:9px 10px;border-bottom:1px solid #eef1f4}.recent-row:last-child{border-bottom:0}.recent-row b{font-size:12px}.recent-row small{display:block;color:var(--muted);font-size:10px;margin-top:2px}.scan-source{font-size:9px;font-weight:800;border-radius:999px;background:#eef4ff;color:var(--blue);padding:4px 6px;align-self:start}
-    .scan-ready{display:inline-flex;align-items:center;gap:6px;color:#08783f;font-size:11px;font-weight:800}.scan-ready:before{content:'';width:7px;height:7px;border-radius:50%;background:#13a05f;box-shadow:0 0 0 4px #13a05f18}
+    .offline-sync{display:flex;align-items:center;gap:7px;margin-top:7px;font-size:10px;font-weight:800;color:#596274}.offline-dot{width:7px;height:7px;border-radius:50%;background:#9ca3af;flex:0 0 auto}.offline-sync.online .offline-dot{background:#13a05f}.offline-sync.offline{color:#9a5b00}.offline-sync.offline .offline-dot{background:#f59e0b}.offline-sync.syncing{color:var(--blue)}.offline-sync.syncing .offline-dot{background:#1976d2}.offline-sync.error{color:var(--bad)}.offline-sync.error .offline-dot{background:var(--bad)}.scan-ready{display:inline-flex;align-items:center;gap:6px;color:#08783f;font-size:11px;font-weight:800}.scan-ready:before{content:'';width:7px;height:7px;border-radius:50%;background:#13a05f;box-shadow:0 0 0 4px #13a05f18}
     .scan-modal{position:fixed;inset:0;z-index:1000;background:rgba(15,23,42,.58);display:flex;align-items:center;justify-content:center;padding:max(18px,env(safe-area-inset-top)) 16px max(18px,env(safe-area-inset-bottom));backdrop-filter:blur(5px)}
     .scan-modal.hidden{display:none!important}.scan-modal-card{width:min(92vw,520px);max-height:min(82dvh,680px);overflow:auto;background:#fff;border-radius:18px;padding:20px;box-shadow:0 24px 70px #0004;animation:modalUp .18s ease-out}
     @keyframes modalUp{from{transform:translateY(12px) scale(.985);opacity:.45}to{transform:translateY(0) scale(1);opacity:1}}
@@ -80,7 +80,7 @@
   <section id="sortSessionCard" class="card hidden">
     <div class="label">Active sorting session</div>
     <select id="sessionSelect" class="field"><option value="">Loading sessions…</option></select>
-    <div id="sessionMeta" class="sub" style="margin-top:8px"></div>
+    <div id="sessionMeta" class="sub" style="margin-top:8px"></div><div id="offlineSyncStatus" class="offline-sync"><span class="offline-dot"></span><span id="offlineSyncText">Preparing offline storage…</span></div>
     <div class="sort-live">
       <div class="sort-counter"><strong id="sortCount">0</strong><span>YOUR SCANS • THIS DEVICE</span></div>
       <div class="recent">
@@ -159,10 +159,126 @@ const SUPABASE_URL='https://xtodkzecgxqqxfyvksmm.supabase.co';
 const SUPABASE_KEY='sb_publishable_1vVhp31vXV__B_Wv7DFClg_pGAEz6dQ';
 const db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=id=>document.getElementById(id);
-let mode='find',stream=null,ocrWorker=null,reading=false,adminPin='',qrDetector=null,qrTimer=null,ocrTimer=null,scanBusy=false,scanCooldownUntil=0,lastAcceptedSerial='',lastAcceptedAt=0,recentScans=[],sessionScanCount=0,ocrCorrectionSerial='',ocrCorrectionCount=0,audioCtx=null,modalOpen=false,modalTimer=null,scannerDeviceId='',scannerDeviceLabel='',scannerDeviceProfile={},adminSessionsCache=[],cameraPermissionState='unknown',scannerRefreshBusy=false;
-const operator=$('operator'); operator.value=localStorage.getItem('swap_operator')||''; operator.addEventListener('change',()=>{localStorage.setItem('swap_operator',operator.value.trim());if(mode==='sort')loadMySessionScans($('sessionSelect').value);});
+let mode='find',stream=null,ocrWorker=null,reading=false,adminPin='',qrDetector=null,qrTimer=null,ocrTimer=null,scanBusy=false,scanCooldownUntil=0,lastAcceptedSerial='',lastAcceptedAt=0,recentScans=[],sessionScanCount=0,ocrCorrectionSerial='',ocrCorrectionCount=0,audioCtx=null,modalOpen=false,modalTimer=null,scannerDeviceId='',scannerDeviceLabel='',scannerDeviceProfile={},adminSessionsCache=[],cameraPermissionState='unknown',scannerRefreshBusy=false,offlineDbPromise=null,offlineSyncBusy=false,lastSyncNote='';
+const operator=$('operator'); operator.value=localStorage.getItem('swap_operator')||''; operator.addEventListener('change',()=>{localStorage.setItem('swap_operator',operator.value.trim());if(mode==='sort')loadMySessionScans($('sessionSelect').value);updateOfflineSyncUI();});
 
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{closeScanModal();document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');mode=b.dataset.mode;$('sortSessionCard').classList.toggle('hidden',mode!=='sort');$('resultCard').classList.remove('show');if(mode==='sort'){loadSessions();renderRecentScans();}});
+
+const OFFLINE_DB_NAME='creccom_swap_offline_v1';
+const OFFLINE_STORE='scans';
+const OFFLINE_BACKUP_KEY='swap_offline_pending_backup_v1';
+const SESSION_CACHE_KEY='swap_cached_sessions_v1';
+const SELECTED_SESSION_KEY='swap_selected_session_v1';
+
+function makeClientScanId(){
+  if(crypto.randomUUID)return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,ch=>{
+    const r=Math.random()*16|0,v=ch==='x'?r:(r&3|8);return v.toString(16);
+  });
+}
+function openOfflineDb(){
+  if(offlineDbPromise)return offlineDbPromise;
+  offlineDbPromise=new Promise((resolve,reject)=>{
+    if(!window.indexedDB){reject(new Error('IndexedDB is unavailable'));return;}
+    const req=indexedDB.open(OFFLINE_DB_NAME,1);
+    req.onupgradeneeded=()=>{
+      const dbi=req.result;
+      if(!dbi.objectStoreNames.contains(OFFLINE_STORE)){
+        const store=dbi.createObjectStore(OFFLINE_STORE,{keyPath:'client_scan_id'});
+        store.createIndex('status','status',{unique:false});
+        store.createIndex('session_id','session_id',{unique:false});
+        store.createIndex('serial_number','serial_number',{unique:false});
+      }
+    };
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error||new Error('Offline database could not open'));
+  });
+  return offlineDbPromise;
+}
+async function offlineGetAll(){
+  try{
+    const dbi=await openOfflineDb();
+    return await new Promise((resolve,reject)=>{
+      const req=dbi.transaction(OFFLINE_STORE,'readonly').objectStore(OFFLINE_STORE).getAll();
+      req.onsuccess=()=>resolve(req.result||[]);
+      req.onerror=()=>reject(req.error);
+    });
+  }catch(e){
+    try{return JSON.parse(localStorage.getItem(OFFLINE_BACKUP_KEY)||'[]')||[];}catch(_){return [];}
+  }
+}
+async function mirrorPendingBackup(){
+  try{
+    const rows=await offlineGetAll();
+    const pending=rows.filter(r=>['pending','sync_error','needs_review'].includes(r.status)).slice(-1200);
+    localStorage.setItem(OFFLINE_BACKUP_KEY,JSON.stringify(pending));
+  }catch(e){}
+}
+async function offlinePut(record,mirror=true){
+  let saved=false;
+  try{
+    const dbi=await openOfflineDb();
+    await new Promise((resolve,reject)=>{
+      const req=dbi.transaction(OFFLINE_STORE,'readwrite').objectStore(OFFLINE_STORE).put(record);
+      req.onsuccess=()=>resolve();req.onerror=()=>reject(req.error);
+    });
+    saved=true;
+  }catch(e){}
+  if(!saved){
+    let backup=[];try{backup=JSON.parse(localStorage.getItem(OFFLINE_BACKUP_KEY)||'[]')||[];}catch(e){}
+    const i=backup.findIndex(x=>x.client_scan_id===record.client_scan_id);
+    if(['pending','sync_error','needs_review'].includes(record.status)){
+      if(i>=0)backup[i]=record;else backup.push(record);
+    }else if(i>=0)backup.splice(i,1);
+    try{localStorage.setItem(OFFLINE_BACKUP_KEY,JSON.stringify(backup.slice(-1200)));}catch(e){}
+  }else if(mirror){
+    await mirrorPendingBackup();
+  }
+  return saved;
+}
+async function offlinePatch(clientId,patch,mirror=true){
+  const rows=await offlineGetAll();
+  const row=rows.find(r=>r.client_scan_id===clientId);
+  if(!row)return null;
+  const next={...row,...patch};
+  await offlinePut(next,mirror);
+  return next;
+}
+async function restoreOfflineBackup(){
+  let backup=[];try{backup=JSON.parse(localStorage.getItem(OFFLINE_BACKUP_KEY)||'[]')||[];}catch(e){}
+  if(!backup.length)return;
+  try{
+    const existing=await offlineGetAll();
+    const ids=new Set(existing.map(r=>r.client_scan_id));
+    for(const row of backup)if(row?.client_scan_id&&!ids.has(row.client_scan_id))await offlinePut(row,false);
+  }catch(e){}
+  await mirrorPendingBackup();
+}
+async function requestPersistentOfflineStorage(){
+  try{if(navigator.storage?.persist)await navigator.storage.persist();}catch(e){}
+}
+function isNetworkError(e){
+  return !navigator.onLine||/failed to fetch|networkerror|network request|load failed|connection|fetch failed/i.test(String(e?.message||e||''));
+}
+function offlineCacheKey(sessionId,name,deviceId){
+  return 'swap_my_scans_cache_v1:'+sessionId+':'+deviceId+':'+name.toLowerCase();
+}
+async function getLocalPending(sessionId,name,deviceId){
+  const rows=await offlineGetAll();
+  return rows.filter(r=>r.session_id===sessionId&&r.scanner_device_id===deviceId&&String(r.scanned_by||'').toLowerCase()===name.toLowerCase()&&['pending','sync_error'].includes(r.status));
+}
+async function updateOfflineSyncUI(stateOverride=''){
+  const el=$('offlineSyncStatus'),txt=$('offlineSyncText');if(!el||!txt)return;
+  const rows=await offlineGetAll();
+  const pending=rows.filter(r=>['pending','sync_error'].includes(r.status)).length;
+  el.className='offline-sync';
+  let state=stateOverride||(offlineSyncBusy?'syncing':(navigator.onLine?'online':'offline'));
+  el.classList.add(state);
+  if(state==='syncing')txt.textContent='Syncing '+pending+' pending scan'+(pending===1?'':'s')+'…';
+  else if(state==='error')txt.textContent=(lastSyncNote||'Sync paused')+' • '+pending+' pending safely on this phone';
+  else if(state==='offline')txt.textContent='Offline • '+pending+' pending scan'+(pending===1?'':'s')+' safely stored on this phone';
+  else txt.textContent='Online • '+pending+' pending scan'+(pending===1?'':'s')+(lastSyncNote?' • '+lastSyncNote:'');
+}
 
 function getBrowserName(){
   const ua=navigator.userAgent||'';
@@ -551,6 +667,27 @@ function showSortSuccessModal(r){
     a.auto?1650:1100
   );
 }
+function showOfflineSavedModal(r,pendingCount){
+  openModal(
+    '<div class="sort-success">'+
+      '<div class="modal-icon ok">✓</div>'+
+      '<div class="modal-title" id="scanModalTitle">Saved offline</div>'+
+      '<div class="modal-sub"><b>'+esc(r.serial_number||'')+'</b> is safely stored on this phone under <b>'+esc(r.session_name||'this session')+'</b>.</div>'+
+      '<div class="allocation-note">Pending sync: <b>'+Number(pendingCount||0).toLocaleString()+'</b> • It will sync automatically when internet returns.</div>'+
+    '</div>',
+    1150
+  );
+}
+function showOfflineDuplicateModal(r){
+  openModal(
+    '<div class="scan-modal-top">'+
+      '<div class="modal-icon warn">!</div>'+
+      '<div><div class="modal-title" id="scanModalTitle">Already scanned on this phone</div><div class="modal-sub">'+esc(r.serial_number||'')+' is already saved locally in this session.</div></div>'+
+    '</div>'+
+    '<div class="modal-location"><div class="eyebrow">LOCAL SCAN</div><strong>'+esc(r.scanned_by||'')+'</strong><div class="modal-sub" style="margin-top:5px">'+esc(r.captured_at?new Date(r.captured_at).toLocaleString():'')+'</div></div>',
+    1800
+  );
+}
 function showDuplicateModal(r){
   const when=r.scanned_at?new Date(r.scanned_at).toLocaleString():'time unavailable';
   openModal(
@@ -565,6 +702,109 @@ function showDuplicateModal(r){
 }
 $('scanModal').addEventListener('click',e=>{if(e.target===$('scanModal'))closeScanModal();});
 
+async function queueOfflineScan(raw,source='SCAN'){
+  const name=operator.value.trim();
+  const sessionId=$('sessionSelect').value;
+  if(!name){setStatus('Enter your name before scanning.','warn');operator.focus();return false;}
+  if(!sessionId){setStatus('Select a cached sorting session before scanning offline.','warn');return false;}
+  await ensureScannerDeviceProfile();
+  const serial=extractSerial(raw)||cleanCandidate(raw);
+  if(!serial)return false;
+  const rows=await offlineGetAll();
+  const existing=rows.find(r=>r.session_id===sessionId&&r.serial_number===serial&&['pending','sync_error','synced','duplicate'].includes(r.status));
+  if(existing){
+    beep('dup');showOfflineDuplicateModal(existing);scanCooldownUntil=Date.now()+1400;return false;
+  }
+  const option=$('sessionSelect').selectedOptions?.[0];
+  const rec={
+    client_scan_id:makeClientScanId(),
+    session_id:sessionId,
+    session_name:option?.textContent||localStorage.getItem('swap_selected_session_name_v1')||'Sorting Session',
+    serial_number:serial,
+    value:serial,
+    scanned_by:name,
+    scanner_device_id:scannerDeviceId,
+    scanner_device_label:scannerDeviceLabel,
+    scanner_device_info:scannerDeviceProfile,
+    scan_source:source,
+    captured_at:new Date().toISOString(),
+    status:'pending',
+    created_at_local:new Date().toISOString()
+  };
+  await offlinePut(rec);
+  localStorage.setItem(SELECTED_SESSION_KEY,sessionId);
+  if(option)localStorage.setItem('swap_selected_session_name_v1',option.textContent||'');
+  const pending=(await offlineGetAll()).filter(r=>['pending','sync_error'].includes(r.status)).length;
+  lastAcceptedSerial=serial;lastAcceptedAt=Date.now();
+  beep('ok');
+  showOfflineSavedModal(rec,pending);
+  await loadMySessionScans(sessionId);
+  await updateOfflineSyncUI();
+  setStatus('Saved offline • safe on this phone until sync.','ok');
+  return true;
+}
+async function syncOfflineQueue(){
+  if(offlineSyncBusy||!navigator.onLine)return;
+  const rows=(await offlineGetAll()).filter(r=>['pending','sync_error'].includes(r.status));
+  if(!rows.length){lastSyncNote='';await updateOfflineSyncUI();return;}
+  offlineSyncBusy=true;lastSyncNote='';await updateOfflineSyncUI('syncing');
+  let synced=0,duplicates=0,review=0;
+  try{
+    const groups=new Map();
+    for(const r of rows){
+      const key=[r.session_id,r.scanned_by,r.scanner_device_id].join('|');
+      if(!groups.has(key))groups.set(key,[]);
+      groups.get(key).push(r);
+    }
+    for(const group of groups.values()){
+      for(let i=0;i<group.length;i+=100){
+        const chunk=group.slice(i,i+100),first=chunk[0];
+        const payload=chunk.map(r=>({
+          client_scan_id:r.client_scan_id,
+          serial_number:r.serial_number,
+          value:r.value||r.serial_number,
+          captured_at:r.captured_at,
+          scan_source:r.scan_source||'SCAN'
+        }));
+        const {data,error}=await db.rpc('swap_sync_offline_batch',{
+          p_session_id:first.session_id,
+          p_scanned_by:first.scanned_by,
+          p_scanner_device_id:first.scanner_device_id,
+          p_scanner_device_label:first.scanner_device_label||null,
+          p_scanner_device_info:first.scanner_device_info||{},
+          p_rows:payload
+        });
+        if(error)throw error;
+        if(!data?.ok)throw new Error(data?.message||'Offline sync failed');
+        for(const result of (data.results||[])){
+          const rec=chunk.find(x=>x.client_scan_id===result.client_scan_id);if(!rec)continue;
+          if(result.status==='synced'){
+            synced++;
+            await offlinePut({...rec,status:'synced',synced_at_local:new Date().toISOString(),sync_result:result},false);
+          }else if(result.status==='duplicate'){
+            duplicates++;
+            await offlinePut({...rec,status:'duplicate',synced_at_local:new Date().toISOString(),sync_result:result},false);
+          }else{
+            review++;
+            await offlinePut({...rec,status:'needs_review',sync_result:result},false);
+          }
+        }
+        await mirrorPendingBackup();
+      }
+    }
+    lastSyncNote=(synced? synced+' synced':'')+(duplicates? (synced?' • ':'')+duplicates+' duplicate'+(duplicates===1?'':'s'):'')+(review? ((synced||duplicates)?' • ':'')+review+' review':'');
+    const current=$('sessionSelect').value;if(current)await loadMySessionScans(current);
+  }catch(e){
+    lastSyncNote='Sync retrying when connection is stable';
+    for(const r of rows)if(r.status==='pending')await offlinePut({...r,status:'sync_error',last_sync_error:String(e?.message||e),last_sync_attempt:new Date().toISOString()},false);
+    await mirrorPendingBackup();
+    await updateOfflineSyncUI('error');
+    offlineSyncBusy=false;
+    return;
+  }
+  offlineSyncBusy=false;
+  await updateOfflineSyncUI();
+}
 async function handleDetected(raw,source='MANUAL',force=false){
   if(scanBusy||Date.now()<scanCooldownUntil)return;
   const name=operator.value.trim();
@@ -576,6 +816,10 @@ async function handleDetected(raw,source='MANUAL',force=false){
 
   scanBusy=true;
   try{
+    if(mode==='sort'&&!navigator.onLine){
+      await queueOfflineScan(quick,source);
+      return;
+    }
     setStatus((source==='QR'?'QR detected':'Checking S/N')+' • '+quick+'…');
     const resolved=await resolveCandidate(raw);
 
@@ -637,8 +881,12 @@ async function handleDetected(raw,source='MANUAL',force=false){
       if(sessionScanCount%10===0) loadMySessionScans(sessionId);
     }
   }catch(e){
-    setStatus('Scan error: '+(e.message||e),'bad');
-    scanCooldownUntil=Date.now()+900;
+    if(mode==='sort'&&isNetworkError(e)){
+      await queueOfflineScan(quick,source);
+    }else{
+      setStatus('Scan error: '+(e.message||e),'bad');
+      scanCooldownUntil=Date.now()+900;
+    }
   }finally{
     scanBusy=false;
   }
@@ -695,10 +943,7 @@ function renderScan(r){
 }
 function kv(k,v){return `<div class="kv"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`}function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 async function loadMySessionScans(sessionId){
-  sessionScanCount=0;
-  $('sortCount').textContent='0';
-  recentScans=[];
-  renderRecentScans();
+  sessionScanCount=0;$('sortCount').textContent='0';recentScans=[];renderRecentScans();
   const name=operator.value.trim();
   if(!sessionId)return;
   if(name.length<2){
@@ -706,35 +951,67 @@ async function loadMySessionScans(sessionId){
     return;
   }
   await ensureScannerDeviceProfile();
-  const {data,error}=await db.rpc('swap_my_session_scans',{
-    p_session_id:sessionId,
-    p_scanner_device_id:scannerDeviceId,
-    p_scanned_by:name
-  });
-  if(error){
-    $('sessionMeta').textContent='Could not load your scan count: '+error.message;
-    return;
+  const cacheKey=offlineCacheKey(sessionId,name,scannerDeviceId);
+  let serverData=null,onlineLoaded=false;
+  if(navigator.onLine){
+    try{
+      const {data,error}=await db.rpc('swap_my_session_scans',{
+        p_session_id:sessionId,p_scanner_device_id:scannerDeviceId,p_scanned_by:name
+      });
+      if(error)throw error;
+      serverData=data||{count:0,scans:[]};onlineLoaded=true;
+      try{localStorage.setItem(cacheKey,JSON.stringify(serverData));}catch(e){}
+    }catch(e){}
   }
-  sessionScanCount=Number(data?.count||0);
+  if(!serverData){
+    try{serverData=JSON.parse(localStorage.getItem(cacheKey)||'null');}catch(e){}
+  }
+  serverData=serverData||{count:0,scans:[]};
+  const pending=await getLocalPending(sessionId,name,scannerDeviceId);
+  sessionScanCount=Number(serverData.count||0)+pending.length;
   $('sortCount').textContent=sessionScanCount.toLocaleString();
-  recentScans=(data?.scans||[]).map(r=>({
-    serial:r.serial_number,
-    warehouse:r.warehouse||'—',
+  const localRecent=pending.map(r=>({
+    serial:r.serial_number,warehouse:'Pending allocation on sync',source:'OFFLINE',
+    time:r.captured_at?new Date(r.captured_at):new Date()
+  }));
+  const serverRecent=(serverData.scans||[]).map(r=>({
+    serial:r.serial_number,warehouse:r.warehouse||'—',
     source:r.allocation_source==='commcare_stock_take'?'COMMCARE':(r.allocation_status==='unallocated'?'REVIEW':(r.scan_source||'SCAN')),
     time:r.scanned_at?new Date(r.scanned_at):new Date()
   }));
+  recentScans=[...localRecent,...serverRecent].sort((a,b)=>b.time-a.time).slice(0,6);
   renderRecentScans();
-  $('sessionMeta').innerHTML='<span class="scan-ready">Your device view</span> • Showing only scans by <b>'+esc(name)+'</b> on this device.';
+  $('sessionMeta').innerHTML=onlineLoaded
+    ? '<span class="scan-ready">Your device view</span> • Showing only scans by <b>'+esc(name)+'</b> on this device.'
+    : '<span class="scan-ready">Offline device view</span> • Cached records + '+pending.length+' pending scan'+(pending.length===1?'':'s')+'.';
 }
 async function loadSessions(selectId){
-  const {data,error}=await db.rpc('swap_active_sessions');
-  if(error){$('sessionSelect').innerHTML='<option>Unable to load sessions</option>';return;}
-  const rows=data||[],s=$('sessionSelect'),previous=selectId||s.value;
-  s.innerHTML=rows.length?rows.map(x=>'<option value="'+x.id+'">'+esc(x.session_name)+'</option>').join(''):'<option value="">No active session</option>';
+  const s=$('sessionSelect');
+  let rows=null;
+  if(navigator.onLine){
+    try{
+      const {data,error}=await db.rpc('swap_active_sessions');if(error)throw error;
+      rows=data||[];
+      try{localStorage.setItem(SESSION_CACHE_KEY,JSON.stringify(rows));}catch(e){}
+    }catch(e){}
+  }
+  if(!rows){
+    try{rows=JSON.parse(localStorage.getItem(SESSION_CACHE_KEY)||'[]')||[];}catch(e){rows=[];}
+  }
+  const previous=selectId||localStorage.getItem(SELECTED_SESSION_KEY)||s.value;
+  s.innerHTML=rows.length?rows.map(x=>'<option value="'+x.id+'">'+esc(x.session_name)+'</option>').join(''):'<option value="">No cached sorting session</option>';
   if(previous&&rows.some(x=>x.id===previous))s.value=previous;
   const active=rows.find(x=>x.id===s.value)||rows[0];
   if(active&&!s.value)s.value=active.id;
+  if(s.value){
+    localStorage.setItem(SELECTED_SESSION_KEY,s.value);
+    const opt=s.selectedOptions?.[0];if(opt)localStorage.setItem('swap_selected_session_name_v1',opt.textContent||'');
+  }
+  if(!rows.length&&!navigator.onLine){
+    $('sessionMeta').innerHTML='<span style="color:#9a5b00;font-weight:800">Offline</span> • Connect once to cache an active sorting session before offline scanning.';
+  }
   await loadMySessionScans(s.value||active?.id||'');
+  await updateOfflineSyncUI();
 }
 
 function downloadImportTemplate(){
@@ -816,12 +1093,26 @@ async function importMasterData(){
   }
 }
 
-$('cameraBtn').onclick=startCamera;$('allowCameraBtn').onclick=startCamera;$('readBtn').onclick=()=>readFrame(true);$('sessionSelect').addEventListener('change',()=>loadMySessionScans($('sessionSelect').value));$('recentToggle').onclick=()=>{const wrap=$('recentScansWrap'),open=wrap.classList.toggle('collapsed')===false;$('recentToggle').setAttribute('aria-expanded',String(open));$('recentToggleText').textContent=open?'Hide':'Show';};$('submitManual').onclick=()=>handleValue($('manual').value.trim());$('manual').addEventListener('keydown',e=>{if(e.key==='Enter')$('submitManual').click()});
+$('cameraBtn').onclick=startCamera;$('allowCameraBtn').onclick=startCamera;$('readBtn').onclick=()=>readFrame(true);$('sessionSelect').addEventListener('change',()=>{localStorage.setItem(SELECTED_SESSION_KEY,$('sessionSelect').value);const opt=$('sessionSelect').selectedOptions?.[0];if(opt)localStorage.setItem('swap_selected_session_name_v1',opt.textContent||'');loadMySessionScans($('sessionSelect').value);});$('recentToggle').onclick=()=>{const wrap=$('recentScansWrap'),open=wrap.classList.toggle('collapsed')===false;$('recentToggle').setAttribute('aria-expanded',String(open));$('recentToggleText').textContent=open?'Hide':'Show';};$('submitManual').onclick=()=>handleValue($('manual').value.trim());$('manual').addEventListener('keydown',e=>{if(e.key==='Enter')$('submitManual').click()});
 
 $('settingsBtn').onclick=()=>{const pin=prompt('Administrator code');if(pin===null)return;adminPin=pin;$('adminPanel').classList.remove('hidden');$('adminName').value=operator.value.trim();loadSessions();loadAdminSessions();loadMasterStats();$('adminPanel').scrollIntoView({behavior:'smooth'});};$('closeAdmin').onclick=()=>$('adminPanel').classList.add('hidden');$('refreshAdminSessions').onclick=loadAdminSessions;$('downloadTemplate').onclick=downloadImportTemplate;$('importMaster').onclick=importMasterData;
 $('openSession').onclick=async()=>{const n=$('sessionName').value.trim(),a=$('adminName').value.trim(),notes=$('sessionNotes').value.trim();if(!n||!a){showAdmin('Enter session and administrator names.','warn');return;}const {error}=await db.rpc('swap_open_session',{p_session_name:n,p_opened_by:a,p_notes:notes||null,p_pin:adminPin});if(error){showAdmin(error.message,'bad');return;}showAdmin('Sorting session opened.','ok');$('sessionName').value='';$('sessionNotes').value='';await loadSessions();await loadAdminSessions();};
 async function closeSession(id){const a=$('adminName').value.trim()||operator.value.trim();if(!a){showAdmin('Enter administrator name first.','warn');return;}if(!confirm('Close this sorting session?'))return;const {error}=await db.rpc('swap_close_session',{p_session_id:id,p_closed_by:a,p_pin:adminPin});if(error){showAdmin(error.message,'bad');return;}showAdmin('Session closed.','ok');await loadSessions();await loadAdminSessions();}
 function showAdmin(msg,type){const e=$('adminMsg');e.textContent=msg;e.className='status '+type;}
-ensureScannerDeviceProfile();initCameraPermissionUI();loadSessions();
+async function initOfflineMode(){
+  await ensureScannerDeviceProfile();
+  await requestPersistentOfflineStorage();
+  await restoreOfflineBackup();
+  await updateOfflineSyncUI();
+  await loadSessions();
+  if(navigator.onLine)syncOfflineQueue();
+}
+window.addEventListener('online',async()=>{lastSyncNote='Connection restored';await updateOfflineSyncUI();await loadSessions($('sessionSelect').value);syncOfflineQueue();});
+window.addEventListener('offline',()=>{lastSyncNote='';updateOfflineSyncUI();});
+setInterval(()=>{if(navigator.onLine)syncOfflineQueue();},12000);
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
+}
+initCameraPermissionUI();initOfflineMode();
 </script>
 </body></html>
