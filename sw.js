@@ -1,4 +1,4 @@
-const CACHE='creccom-swap-shell-v2';
+const CACHE='creccom-swap-shell-v3';
 const CORE=[
   '/',
   '/index.html',
