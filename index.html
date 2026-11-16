@@ -1014,6 +1014,129 @@ async function loadSessions(selectId){
   await updateOfflineSyncUI();
 }
 
+function safeFileName(v){return String(v||'session').replace(/[^a-z0-9-_]+/gi,'_').replace(/^_+|_+$/g,'').slice(0,80)||'session';}
+async function loadAdminSessions(){
+  if(!adminPin)return;
+  const box=$('adminSessions');
+  box.innerHTML='<div class="sub">Loading session records…</div>';
+  const {data,error}=await db.rpc('swap_admin_sessions',{p_pin:adminPin});
+  if(error){box.innerHTML='<div class="status bad">'+esc(error.message)+'</div>';return;}
+  adminSessionsCache=data||[];
+  renderAdminSessions(adminSessionsCache);
+}
+function renderAdminSessions(data){
+  const box=$('adminSessions');
+  if(!data?.length){box.innerHTML='<div class="sub">No sorting sessions have been created yet.</div>';return;}
+  box.innerHTML=data.map(x=>{
+    const status=String(x.status||'').toLowerCase();
+    const opened=x.opened_at?new Date(x.opened_at).toLocaleString():'—';
+    const last=x.last_scan?new Date(x.last_scan).toLocaleString():'No scans yet';
+    return '<div class="session-card">'+
+      '<div class="session-card-top"><div><div class="session-title">'+esc(x.session_name)+' <span class="session-status '+esc(status)+'">'+esc(String(x.status||'').toUpperCase())+'</span></div>'+
+      '<div class="session-meta">Opened by '+esc(x.opened_by||'—')+' • '+esc(opened)+'<br>Last scan: '+esc(last)+'</div></div></div>'+
+      '<div class="session-metrics">'+
+        '<div class="session-metric"><strong>'+Number(x.scan_count||0).toLocaleString()+'</strong><span>SCANS</span></div>'+
+        '<div class="session-metric"><strong>'+Number(x.user_count||0).toLocaleString()+'</strong><span>USERS</span></div>'+
+        '<div class="session-metric"><strong>'+Number(x.device_count||0).toLocaleString()+'</strong><span>SCANNER DEVICES</span></div>'+
+      '</div>'+
+      '<div class="session-actions">'+
+        '<button class="secondary" onclick="downloadSession(\''+x.id+'\')">Download Session Excel</button>'+
+        (status==='active'?'<button class="danger" onclick="closeSession(\''+x.id+'\')">Close</button>':'<button class="ghost" disabled>Closed</button>')+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+async function downloadSession(id){
+  const meta=adminSessionsCache.find(x=>x.id===id);
+  showAdmin('Preparing session download…','');
+  const {data,error}=await db.rpc('swap_session_export',{p_session_id:id,p_pin:adminPin});
+  if(error){showAdmin(error.message,'bad');return;}
+  const rows=data||[];
+  const scanRows=rows.map((r,i)=>{
+    const info=r.scanner_device_info||{};
+    return {
+      'No.':i+1,
+      'Serial Number':r.serial_number||'',
+      'Item Code':r.item_code||'',
+      'Device Status':r.device_status||'',
+      'Warehouse / Allocation':r.warehouse||'',
+      'Company':r.company||'',
+      'Matched Master':r.matched_device?'Yes':'No',
+      'Scanned By':r.scanned_by||'',
+      'Scanned At':r.scanned_at?new Date(r.scanned_at).toLocaleString():'',
+      'Scan Method':r.scan_source||'',
+      'Scanner Device ID':r.scanner_device_id||'',
+      'Scanner Device':r.scanner_device_label||'',
+      'Platform':info.platform||'',
+      'Model':info.model||'',
+      'Browser':info.browser||'',
+      'Screen':info.screen||'',
+      'Viewport':info.viewport||''
+    };
+  });
+  const devices=new Map();
+  for(const r of rows){
+    const key=r.scanner_device_id||'Unknown';
+    const info=r.scanner_device_info||{};
+    if(!devices.has(key))devices.set(key,{id:key,label:r.scanner_device_label||'',platform:info.platform||'',model:info.model||'',browser:info.browser||'',screen:info.screen||'',scans:0,users:new Set(),first:null,last:null});
+    const d=devices.get(key);d.scans++;if(r.scanned_by)d.users.add(r.scanned_by);
+    const t=r.scanned_at?new Date(r.scanned_at):null;
+    if(t&&(!d.first||t<d.first))d.first=t;if(t&&(!d.last||t>d.last))d.last=t;
+  }
+  const deviceRows=[...devices.values()].map((d,i)=>({
+    'No.':i+1,
+    'Scanner Device ID':d.id,
+    'Device':d.label,
+    'Platform':d.platform,
+    'Model':d.model,
+    'Browser':d.browser,
+    'Screen':d.screen,
+    'Scans':d.scans,
+    'Users':Array.from(d.users).join(', '),
+    'First Scan':d.first?d.first.toLocaleString():'',
+    'Last Scan':d.last?d.last.toLocaleString():''
+  }));
+  const summary=[
+    ['CRECCOM SWAP Sorting Session'],
+    ['Session',meta?.session_name||rows[0]?.session_name||''],
+    ['Status',meta?.status||rows[0]?.session_status||''],
+    ['Opened By',meta?.opened_by||rows[0]?.opened_by||''],
+    ['Opened At',meta?.opened_at?new Date(meta.opened_at).toLocaleString():(rows[0]?.opened_at?new Date(rows[0].opened_at).toLocaleString():'')],
+    ['Closed By',meta?.closed_by||rows[0]?.closed_by||''],
+    ['Closed At',meta?.closed_at?new Date(meta.closed_at).toLocaleString():(rows[0]?.closed_at?new Date(rows[0].closed_at).toLocaleString():'')],
+    ['Total Scans',meta?.scan_count??rows.length],
+    ['Users',meta?.user_count??new Set(rows.map(r=>r.scanned_by).filter(Boolean)).size],
+    ['Scanner Devices Used',meta?.device_count??devices.size]
+  ];
+  const wb=XLSX.utils.book_new();
+  const wsSummary=XLSX.utils.aoa_to_sheet(summary);wsSummary['!cols']=[{wch:22},{wch:42}];
+  XLSX.utils.book_append_sheet(wb,wsSummary,'Session Summary');
+  const wsScans=XLSX.utils.json_to_sheet(scanRows.length?scanRows:[{'Serial Number':'No scans recorded'}]);
+  wsScans['!cols']=[{wch:7},{wch:22},{wch:16},{wch:15},{wch:38},{wch:22},{wch:14},{wch:22},{wch:22},{wch:14},{wch:38},{wch:30},{wch:16},{wch:18},{wch:14},{wch:14},{wch:14}];
+  XLSX.utils.book_append_sheet(wb,wsScans,'Scanned Devices');
+  const wsDevices=XLSX.utils.json_to_sheet(deviceRows.length?deviceRows:[{'Scanner Device ID':'No scanner device data recorded'}]);
+  wsDevices['!cols']=[{wch:7},{wch:38},{wch:30},{wch:18},{wch:20},{wch:14},{wch:14},{wch:10},{wch:28},{wch:22},{wch:22}];
+  XLSX.utils.book_append_sheet(wb,wsDevices,'Scanner Devices Used');
+  const filename='SWAP_'+safeFileName(meta?.session_name||'Sorting_Session')+'.xlsx';
+  XLSX.writeFile(wb,filename);
+  showAdmin('Session downloaded successfully.','ok');
+}
+async function loadMasterStats(){
+  const box=$('masterStats'); if(!box)return;
+  const {data,error}=await db.rpc('swap_master_stats');
+  if(error){box.innerHTML='<div class="status bad" style="grid-column:1/-1">'+esc(error.message)+'</div>';return;}
+  const d=data||{};
+  box.innerHTML=
+    '<div class="stat"><div class="stat-num">'+Number(d.devices||0).toLocaleString()+'</div><div class="stat-label">DEVICES</div></div>'+
+    '<div class="stat"><div class="stat-num">'+Number(d.warehouses||0).toLocaleString()+'</div><div class="stat-label">WAREHOUSES</div></div>'+
+    '<div class="stat"><div class="stat-num">'+Number(d.active||0).toLocaleString()+'</div><div class="stat-label">ACTIVE</div></div>'+
+    '<div class="stat"><div class="stat-num">'+Number(d.item_codes||0).toLocaleString()+'</div><div class="stat-label">ITEM CODES</div></div>';
+}
+function setImportState(percent,msg,type){
+  $('importBar').style.width=Math.max(0,Math.min(100,percent))+'%';
+  const el=$('importMsg'); el.textContent=msg; el.className='status '+(type||''); 
+}
+
 function downloadImportTemplate(){
   const headers=['Sr','ID','Document Status','Item Code','Status','Warehouse','Company','Created By'];
   const example=[1,'EXAMPLE000001','0','TAB000000','Active','Example Warehouse - IMW','Imagine Malawi','user@creccommw.org'];
@@ -1096,8 +1219,32 @@ async function importMasterData(){
 $('cameraBtn').onclick=startCamera;$('allowCameraBtn').onclick=startCamera;$('readBtn').onclick=()=>readFrame(true);$('sessionSelect').addEventListener('change',()=>{localStorage.setItem(SELECTED_SESSION_KEY,$('sessionSelect').value);const opt=$('sessionSelect').selectedOptions?.[0];if(opt)localStorage.setItem('swap_selected_session_name_v1',opt.textContent||'');loadMySessionScans($('sessionSelect').value);});$('recentToggle').onclick=()=>{const wrap=$('recentScansWrap'),open=wrap.classList.toggle('collapsed')===false;$('recentToggle').setAttribute('aria-expanded',String(open));$('recentToggleText').textContent=open?'Hide':'Show';};$('submitManual').onclick=()=>handleValue($('manual').value.trim());$('manual').addEventListener('keydown',e=>{if(e.key==='Enter')$('submitManual').click()});
 
 $('settingsBtn').onclick=()=>{const pin=prompt('Administrator code');if(pin===null)return;adminPin=pin;$('adminPanel').classList.remove('hidden');$('adminName').value=operator.value.trim();loadSessions();loadAdminSessions();loadMasterStats();$('adminPanel').scrollIntoView({behavior:'smooth'});};$('closeAdmin').onclick=()=>$('adminPanel').classList.add('hidden');$('refreshAdminSessions').onclick=loadAdminSessions;$('downloadTemplate').onclick=downloadImportTemplate;$('importMaster').onclick=importMasterData;
-$('openSession').onclick=async()=>{const n=$('sessionName').value.trim(),a=$('adminName').value.trim(),notes=$('sessionNotes').value.trim();if(!n||!a){showAdmin('Enter session and administrator names.','warn');return;}const {error}=await db.rpc('swap_open_session',{p_session_name:n,p_opened_by:a,p_notes:notes||null,p_pin:adminPin});if(error){showAdmin(error.message,'bad');return;}showAdmin('Sorting session opened.','ok');$('sessionName').value='';$('sessionNotes').value='';await loadSessions();await loadAdminSessions();};
-async function closeSession(id){const a=$('adminName').value.trim()||operator.value.trim();if(!a){showAdmin('Enter administrator name first.','warn');return;}if(!confirm('Close this sorting session?'))return;const {error}=await db.rpc('swap_close_session',{p_session_id:id,p_closed_by:a,p_pin:adminPin});if(error){showAdmin(error.message,'bad');return;}showAdmin('Session closed.','ok');await loadSessions();await loadAdminSessions();}
+$('openSession').onclick=async()=>{
+  const n=$('sessionName').value.trim(),a=$('adminName').value.trim(),notes=$('sessionNotes').value.trim();
+  if(!n||!a){showAdmin('Enter session and administrator names.','warn');return;}
+  if(!adminPin){showAdmin('Enter an administrator code through the Admin button.','warn');return;}
+  const btn=$('openSession'); btn.disabled=true;btn.textContent='Opening session…';
+  try{
+    const {error}=await db.rpc('swap_open_session',{p_session_name:n,p_opened_by:a,p_notes:notes||null,p_pin:adminPin});
+    if(error)throw error;
+    showAdmin('Sorting session opened successfully.','ok');
+    $('sessionName').value='';$('sessionNotes').value='';
+    await loadSessions();await loadAdminSessions();
+  }catch(e){showAdmin('Could not open sorting session: '+(e.message||'Database connection failed.'),'bad');}
+  finally{btn.disabled=false;btn.textContent='Open Sorting Session';}
+};
+async function closeSession(id){
+  const a=$('adminName').value.trim()||operator.value.trim();
+  if(!a){showAdmin('Enter administrator name first.','warn');return;}
+  if(!adminPin){showAdmin('Administrator code is required.','warn');return;}
+  if(!confirm('Close this sorting session?'))return;
+  try{
+    const {error}=await db.rpc('swap_close_session',{p_session_id:id,p_closed_by:a,p_pin:adminPin});
+    if(error)throw error;
+    showAdmin('Session closed.','ok');
+    await loadSessions();await loadAdminSessions();
+  }catch(e){showAdmin('Could not close session: '+(e.message||'Database connection failed.'),'bad');}
+}
 function showAdmin(msg,type){const e=$('adminMsg');e.textContent=msg;e.className='status '+type;}
 async function initOfflineMode(){
   await ensureScannerDeviceProfile();
